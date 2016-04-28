@@ -1,0 +1,8 @@
+*.o
+*.iso
+freedo/*.o
+sound/sdl/*.o
+video/sdl/*.o
+input/sdl/*.o
+timer/linux/*.o
+fs/linux/*.o

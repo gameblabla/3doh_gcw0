@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=3Doh!
+Comment=3DO emulator
+Exec=3doh %f
+Icon=icon
+Terminal=false
+Categories=emulators;
