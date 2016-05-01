@@ -66,7 +66,7 @@ extern _ext_Interface  io_interface;
 #define ARM_MODE_UNK    0xff
 
 //static AString str;
-const static uint8_t arm_mode_table[]=
+static const uint8_t arm_mode_table[]=
 {
    ARM_MODE_UNK,     ARM_MODE_UNK,     ARM_MODE_UNK,     ARM_MODE_UNK,
    ARM_MODE_UNK,     ARM_MODE_UNK,     ARM_MODE_UNK,     ARM_MODE_UNK,
@@ -85,7 +85,7 @@ const static uint8_t arm_mode_table[]=
 
 //--------------------------Conditions-------------------------------------------
 //flags - N Z C V  -  31...28
-const static uint16_t cond_flags_cross[]={   //((cond_flags_cross[cond_feald]>>flags)&1)  -- пример проверки
+static const uint16_t cond_flags_cross[]={   //((cond_flags_cross[cond_feald]>>flags)&1)  -- пример проверки
    0xf0f0, //EQ - Z set (equal)
    0x0f0f, //NE - Z clear (not equal)
    0xcccc, //CS - C set (unsigned higher or same)
@@ -621,16 +621,14 @@ void _arm_Reset(void)
    _madam_Reset();
 }
 
-int addrr=0;
-int vall=0;
+uint32_t vall=0, addrr=0;
 int inuse=0;
 
 void ldm_accur(uint32_t opc, uint32_t base, uint32_t rn_ind)
 {
    uint16_t x=opc&0xffff;
    uint16_t list=opc&0xffff;
-   uint32_t base_comp,	//по ней шагаем
-                i=0,tmp;
+   uint32_t base_comp, i=0,tmp;
 
    x = (x & 0x5555) + ((x >> 1) & 0x5555);
    x = (x & 0x3333) + ((x >> 2) & 0x3333);
@@ -1405,7 +1403,7 @@ Undefine:
                {
                   uint32_t base,tbas;
                   uint32_t oper2;
-                  uint32_t val, rora;
+                  uint32_t val;
 
                   pc_tmp=REG_PC;
                   REG_PC+=4;

@@ -6,7 +6,7 @@
 #include "video.h"
 #include "config.h"
 
-extern char configFile[96];
+//extern char configFile[128];
 
 SDL_Event eventjoy;
 SDL_Joystick *joystick[6];
@@ -40,7 +40,7 @@ int inputMapButton(char *button)
 
 void inputReadConfig()
 {
-	configOpen(configFile);
+	/*configOpen(configFile);
 	int i;
 	char js[10];
 	for(i=0;i<6;i++)
@@ -59,7 +59,7 @@ void inputReadConfig()
 		joystickmap[i].buttonp     = inputMapButton(configReadString(js,"buttonp"));
 	}
 
-	configClose();
+	configClose();*/
 }
 
 int inputQuit()

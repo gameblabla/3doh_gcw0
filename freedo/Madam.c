@@ -1614,7 +1614,7 @@ void  DrawPackedCel_New(void)
    uint16_t CURPIX,LAMV;
 
    int lastaddr;
-   int xcur,ycur,xvert,yvert,xdown,ydown,hdx,hdy;
+   int xcur = 0,ycur = 0,xvert,yvert,xdown,ydown,hdx,hdy;
 
    unsigned int start = PDATA;
 
@@ -1803,13 +1803,6 @@ void  DrawPackedCel_New(void)
 
                      if(!pproj.Transparent)
                      {
-#if 0
-                        if (drawHeight != VDY1616 && YPOS < 0)
-                        {
-                           int sfdjlk = 0;
-                        }
-#endif
-
                         if(TexelDraw_Scale(CURPIX, LAMV, xcur>>16, ycur>>16, (xcur+(HDX1616+VDX1616))>>16, (ycur+(HDY1616+drawHeight))>>16))
                            break;
                      }
@@ -1971,7 +1964,7 @@ void  DrawPackedCel_New(void)
 void  DrawLiteralCel_New(void)
 {
    sf=100000;
-   int xcur,ycur,xvert,yvert,xdown,ydown,hdx,hdy;
+   int xcur = 0,ycur = 0,xvert,yvert,xdown,ydown,hdx,hdy;
    uint16_t CURPIX,LAMV;
 
    bpp=BPP[PRE0&PRE0_BPP_MASK];
@@ -2151,7 +2144,7 @@ void  DrawLiteralCel_New(void)
 void  DrawLRCel_New(void)
 {
    sf=100000;
-   int i,j,xcur,ycur,xvert,yvert,xdown,ydown,hdx,hdy;
+   int i,j,xcur = 0,ycur = 0,xvert,yvert,xdown,ydown,hdx,hdy;
    uint16_t CURPIX,LAMV;
 
 
@@ -2616,7 +2609,7 @@ void Init_Arbitrary_Map(void)
 int  TexelDraw_Line(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int cnt)
 {
    int i=0;
-   unsigned int pixel;
+   unsigned int pixel = 0;
    unsigned int curr=0xffffffff;
 
    xcur>>=16;

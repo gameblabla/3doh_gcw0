@@ -21,7 +21,7 @@ int videoInit(void)
 	
 	SDL_ShowCursor(0);
 
-	screen = SDL_SetVideoMode(320,240,32, SDL_SWSURFACE);
+	screen = SDL_SetVideoMode(320,240, 32, SDL_SWSURFACE);
 	
 	return 0;
 }

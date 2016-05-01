@@ -30,9 +30,9 @@ char* pNVRam;
 extern _ext_Interface  io_interface;
 _ext_Interface  fd_interface;
 int onsector=0;
-char biosFile[96];
-char imageFile[96];
-char configFile[96];
+char biosFile[128];
+char imageFile[128];
+char configFile[128];
 
 bool __temporalfixes;
 int HightResMode;
@@ -40,7 +40,7 @@ int __tex__scaler;
 
 int count_samples=0;
 
-int initEmu(int armclock);
+int initEmu();
 
 uint32 ReverseBytes(uint32 value)
 {
@@ -50,7 +50,6 @@ uint32 ReverseBytes(uint32 value)
 
 void readNvRam(void *pnvram)
 {
-
 	FILE* bios1;
 	long fsize;
 	char *buffer;
@@ -95,8 +94,6 @@ void readNvRam(void *pnvram)
 }
 
 
-
-
 void loadRom1(void *prom)
 {
 	fsReadBios(biosFile, prom);
@@ -105,50 +102,50 @@ void loadRom1(void *prom)
 
 void *swapFrame(void *curr_frame)
 {
-		return curr_frame;
+	return curr_frame;
 }
 
 void * emuinterface(int procedure, void *datum)
 {
 	typedef void *(*func_type)(void);
-	void *therom;
+
 	switch(procedure)
 	{
-	case EXT_READ_ROMS:
-		loadRom1(datum);
-		break;
-	case EXT_READ2048:
-	fsReadBlock(datum,onsector);
-		break;
-	case EXT_GET_DISC_SIZE:
-		return (void *) fsReadDiscSize();
-		break;
-	case EXT_ON_SECTOR:
-		onsector=*((int*)&datum);
-		break;
-	case EXT_READ_NVRAM:
-		readNvRam(datum);
-		break;
-	case EXT_WRITE_NVRAM:
-		break;
-	case EXT_PUSH_SAMPLE:
-		soundFillBuffer(*((unsigned int*)&datum));
-		count_samples++;
-		break;
-	case EXT_SWAPFRAME:
-		return swapFrame(datum);
-		break;
-	case EXT_GETP_PBUSDATA:
-		return (void *)inputRead();
-		break;
-	case EXT_GET_PBUSLEN:
-		return (void *)inputLength();
-		break;
-	case EXT_FRAMETRIGGER_MT:
-		break;
-	default:
-	//	return _freedo_Interface(procedure,datum);
-		break;
+		case EXT_READ_ROMS:
+			loadRom1(datum);
+			break;
+		case EXT_READ2048:
+		fsReadBlock(datum,onsector);
+			break;
+		case EXT_GET_DISC_SIZE:
+			return (void *) fsReadDiscSize();
+			break;
+		case EXT_ON_SECTOR:
+			onsector=*((int*)&datum);
+			break;
+		case EXT_READ_NVRAM:
+			readNvRam(datum);
+			break;
+		case EXT_WRITE_NVRAM:
+			break;
+		case EXT_PUSH_SAMPLE:
+			soundFillBuffer(*((unsigned int*)&datum));
+			count_samples++;
+			break;
+		case EXT_SWAPFRAME:
+			return swapFrame(datum);
+			break;
+		case EXT_GETP_PBUSDATA:
+			return (void *)inputRead();
+			break;
+		case EXT_GET_PBUSLEN:
+			return (void *)inputLength();
+			break;
+		case EXT_FRAMETRIGGER_MT:
+			break;
+		default:
+		//	return _freedo_Interface(procedure,datum);
+			break;
 	};
 
 return (void *)readNvRam;
@@ -159,7 +156,6 @@ void readConfiguration(char* config)
 	configOpen(config);
 	configClose();
 }
-
 
 
 int main(int argc, char *argv[])
@@ -175,13 +171,13 @@ int main(int argc, char *argv[])
 	}
 	
 	snprintf(biosFile, sizeof(biosFile), "%s/.3doh/bios.bin", getenv("HOME"));
-	snprintf(configFile, sizeof(configFile), "%s/.3doh/config.ini", getenv("HOME"));
+	//snprintf(configFile, sizeof(configFile), "%s/.3doh/config.ini", getenv("HOME"));
 	snprintf(imageFile, sizeof (imageFile), argv[1]);
 	
 	fsInit();
 	/*readConfiguration(configFile);*/	
 
-	if(!initEmu(12500000)) return 0;
+	if(!initEmu()) return 0;
 
 	fd_interface(FDP_DESTROY,(void *)0);
 	soundClose();
@@ -193,11 +189,8 @@ int main(int argc, char *argv[])
 
 
 
-///int main(int argc, char *argv[])
-int initEmu(int armclock)
+int initEmu()
 {
-	int arm_clock=armclock;
-	int tex_quality=0;
 	int quit=0;
 	int waitfps;
 	
@@ -209,14 +202,14 @@ int initEmu(int armclock)
 
 	if(!fsOpenIso(imageFile)) return 0;
 	
-	fd_interface(FDP_SET_ARMCLOCK,(void *)arm_clock);
-	fd_interface(FDP_SET_TEXQUALITY,(void *)tex_quality);
+	fd_interface(FDP_SET_ARMCLOCK, (void *)12500000);
+	fd_interface(FDP_SET_TEXQUALITY, (void *)0);
 
 	_3do_Init();
 
-	int frame_end;
-	int time_start=0;
-	int frames=0;
+	int frame_end = 0;
+	int time_start = 0;
+	int frames = 0;
 	time_start = timerGettime();
 	
 	while(!quit)
@@ -249,6 +242,6 @@ int initEmu(int armclock)
 	soundClose();
 	inputClose();
 	SDL_Quit();
-
+	
 	return 1;
 }
