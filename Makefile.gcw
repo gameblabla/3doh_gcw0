@@ -1,8 +1,8 @@
 CC = mipsel-linux-gcc
 TARGET = 3doh
-CFLAGS  = -O3 -fomit-frame-pointer -mips32r2 -Wall -Wextra
+CFLAGS  = -Ofast -fomit-frame-pointer  -fdata-sections -ffunction-sections -mips32r2 -Wall -Wextra -D__GCW__
 CFLAGS += -I./ -I./freedo
-LDFLAGS = -lSDL -flto -Wl,--as-needed
+LDFLAGS = -lSDL -flto -Wl,--as-needed -Wl,--gc-sections -s
 
 OBJS = freedo/arm.o \
 freedo/DiagPort.o\

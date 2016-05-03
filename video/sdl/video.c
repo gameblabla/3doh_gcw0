@@ -9,6 +9,13 @@ SDL_Surface *screen;
 struct VDLFrame *frame;
 extern _ext_Interface  fd_interface;
 
+#ifdef __GCW__
+	#define flags SDL_HWSURFACE | SDL_DOUBLEBUF
+#else
+	#define flags SDL_SWSURFACE
+#endif
+
+
 int videoInit(void)
 {
 	frame = (struct VDLFrame*)malloc(sizeof(struct VDLFrame));
@@ -20,9 +27,8 @@ int videoInit(void)
 	}
 	
 	SDL_ShowCursor(0);
+	screen = SDL_SetVideoMode(320,240,32, flags);
 
-	screen = SDL_SetVideoMode(320,240, 32, SDL_SWSURFACE);
-	
 	return 0;
 }
 

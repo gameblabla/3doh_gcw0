@@ -28,6 +28,7 @@ Felix Lazarev
 #include <string.h>
 #include "DSP.h"
 #include "Clio.h"
+#include "retro_inline.h"
 #include "freedocore.h"
 
 #if 0 //20 bit ALU
@@ -49,8 +50,8 @@ Felix Lazarev
 #define WAVELET (11025)
 
 uint16_t RegBase(unsigned int reg);
-uint16_t ireadh(unsigned int addr);
-void iwriteh(unsigned int addr, uint16_t val);
+INLINE uint16_t ireadh(unsigned int addr);
+INLINE void iwriteh(unsigned int addr, uint16_t val);
 void OperandLoader(int Requests);
 int  OperandLoaderNWB(void);
 
@@ -412,361 +413,369 @@ void _dsp_Reset(void)
    flags.nOP_MASK=~0;
 }
 
+union {
+	struct {
+	bool Zero;
+	bool Nega;
+	bool Carry;
+	bool Over;
+	};
+	unsigned int raw;
+} Flags;
+
 uint32_t _dsp_Loop(void)
 {
    unsigned int BOP;	//1st & 2nd operand
    unsigned int Y;			//accumulator
-
-   union {
-      struct {
-         bool Zero;
-         bool Nega;
-         bool Carry;//not borrow
-         bool Over;
-      };
-      unsigned int raw;
-   } Flags;
+   unsigned AOP  = 0; /* 1st operand */
+   unsigned RBSR = 0;	/* return address */
+   bool fExact   = 0;
+   bool Work     = true;
 
    if(flags.Running&1)
    {
-      unsigned AOP  = 0; /* 1st operand */
-      unsigned RBSR = 0;	/* return address */
-      bool fExact   = 0;
-      bool Work     = true;
       _dsp_Reset();
-
       Flags.raw=0;
-
       BOP=0;
       Y=0;
 
-      do
-      {
-         union ITAG inst;
+	  union ITAG inst;	
 
-         inst.raw=NMem[dregs.PC++];
-         //DSPCYCLES++;
-
-         if(inst.aif.PAD)
-         {//Control instruction
-            switch((inst.raw>>7)&255) //special
-            {
-               case 0://NOP TODO
-                  break;
-               case 1://branch accum
-                  dregs.PC=(Y>>16)&0x3ff;
-                  break;
-               case 2://set rbase
-                  RBASEx4=(inst.cif.BCH_ADDR&0x3f)<<2;
-                  break;
-               case 3://set rmap
-                  REGi=inst.cif.BCH_ADDR&7;
-                  break;
-               case 4://RTS
-                  dregs.PC=RBSR;
-                  break;
-               case 5://set op_mask
-                  flags.nOP_MASK=~(inst.cif.BCH_ADDR&0x1f);
-                  break;
-               case 6:// -not used2- ins
-                  break;
-               case 7://SLEEP
-                  Work=false;
-                  break;
-               case 8:  case 9:  case 10: case 11:
-               case 12: case 13: case 14: case 15:
-                  //jump //branch only if not branched
-                  dregs.PC=inst.cif.BCH_ADDR;
-                  break;
-               case 16: case 17: case 18: case 19:
-               case 20: case 21: case 22: case 23:
-                  //jsr
-                  RBSR=dregs.PC;
-                  dregs.PC=inst.cif.BCH_ADDR;
-                  break;
-               case 24: case 25: case 26: case 27:
-               case 28: case 29: case 30: case 31:
-                  // branch only if was branched
-                  dregs.PC=inst.cif.BCH_ADDR;
-                  break;
-               case 32: case 33: case 34: case 35:
-               case 36: case 37: case 38: case 39:
-               case 40: case 41: case 42: case 43: // ??? -not used- instr's
-               case 44: case 45: case 46: case 47: // ??? -not used- instr's
-                  // MOVEREG
-                  {
-                     int Operand=OperandLoaderNWB();
-                     if(inst.r2of.R1_DI)
-                        iwriteh(ireadh(REGCONV[REGi][inst.r2of.R1]^RBASEx4),Operand);
-                     else
-                        iwriteh(REGCONV[REGi][inst.r2of.R1]^RBASEx4,Operand);
-                  }
-                  break;
-               case 48: case 49: case 50: case 51:
-               case 52: case 53: case 54: case 55:
-               case 56: case 57: case 58: case 59:
-               case 60: case 61: case 62: case 63:
-                  // MOVE
-                  {
-                     int Operand=OperandLoaderNWB();
-                     if(inst.nrof.DI)
-                        iwriteh(ireadh(inst.cif.BCH_ADDR),Operand);
-                     else
-                        iwriteh(inst.cif.BCH_ADDR,Operand);
-                  }
-                  break;
-               default: // Coundition branch
-                  if(1&BRCONDTAB[inst.br.bits][fExact+((Flags.raw*0x10080402)>>24)]) dregs.PC=inst.cif.BCH_ADDR;
-                  break;
-            }//switch((inst.raw>>7)&255) //special
-         }
-         else
-         {
-            //ALU instruction
-            flags.req.raw=INSTTRAS[inst.raw].req.raw;
-            flags.BS     =INSTTRAS[inst.raw].BS;
-
-            OperandLoader(inst.aif.NUMOPS);
-
-            switch(inst.aif.MUXA)
-            {
-               case 3:
-                  if(inst.aif.M2SEL==0)
-                  {
-                     if((inst.aif.ALU==3)||(inst.aif.ALU==5)) // ACSBU signal
-                        AOP=Flags.Carry? ((int)flags.MULT1<<16)&ALUSIZEMASK : 0;
-                     else
-                        AOP=( ((int)flags.MULT1*(((signed int)Y>>15)&~1))&ALUSIZEMASK );
-                  }
-                  else
-                     AOP=( ((int)flags.MULT1*(int)flags.MULT2*2)&ALUSIZEMASK );
-                  break;
-               case 1:
-                  AOP=flags.ALU1<<16;
-                  break;
-               case 0:
-                  AOP=Y;
-                  break;
-               case 2:
-                  AOP=flags.ALU2<<16;
-                  break;
-            }
-
-            if((inst.aif.ALU==3)||(inst.aif.ALU==5)) // ACSBU signal
-               BOP=Flags.Carry<<16;
-            else
-            {
-               switch(inst.aif.MUXB)
-               {
-                  case 0:
-                     BOP=Y;
-                     break;
-                  case 1:
-                     BOP=flags.ALU1<<16;
-                     break;
-                  case 2:
-                     BOP=flags.ALU2<<16;
-                     break;
-                  case 3:
-                     if(inst.aif.M2SEL==0) // ACSBU==0 here always
-                        BOP=( ((int)flags.MULT1*(((signed int)Y>>15))&~1)&ALUSIZEMASK );
-                     else
-                        BOP=( ((int)flags.MULT1*(int)flags.MULT2*2)&ALUSIZEMASK );
-                     break;
-               }
-            }
-            //ok now ALU itself.
-            //unsigned char ctt1,ctt2;
-            Flags.Over=Flags.Carry=0; // Any ALU op. change Over and possible Carry
-            switch(inst.aif.ALU)
-            {
-               case 0:
-                  Y=AOP;
-                  break;
-                  //*
-               case 1:
-                  Y=0-BOP;
-                  Flags.Carry=SUBCFLAG(0,BOP,Y);
-                  Flags.Over=SUBVFLAG(0,BOP,Y);
-                  break;
-               case 2:
-               case 3:
-                  Y=AOP+BOP;
-                  Flags.Carry=ADDCFLAG(AOP,BOP,Y);
-                  Flags.Over=ADDVFLAG(AOP,BOP,Y);
-                  break;
-               case 4:
-               case 5:
-                  Y=AOP-BOP;
-                  Flags.Carry=SUBCFLAG(AOP,BOP,Y);
-                  Flags.Over=SUBVFLAG(AOP,BOP,Y);
-                  break;
-               case 6:
-                  Y=AOP+0x1000;
-                  Flags.Carry=ADDCFLAG(AOP,0x1000,Y);
-                  Flags.Over=ADDVFLAG(AOP,0x1000,Y);
-                  break;
-               case 7:
-                  Y=AOP-0x1000;
-                  Flags.Carry=SUBCFLAG(AOP,0x1000,Y);
-                  Flags.Over=SUBVFLAG(AOP,0x1000,Y);
-                  break;
-
-               case 8:		// A
-                  Y=AOP;
-                  break;
-               case 9:		// NOT A
-                  Y=AOP^ALUSIZEMASK;
-                  break;
-               case 10:	// A AND B
-                  Y=AOP&BOP;
-                  break;
-               case 11:	// A NAND B
-                  Y=(AOP&BOP)^ALUSIZEMASK;
-                  break;
-               case 12:	// A OR B
-                  Y=AOP|BOP;
-                  break;
-               case 13:	// A NOR B
-                  Y=(AOP|BOP)^ALUSIZEMASK;
-                  break;
-               case 14:	// A XOR B
-                  Y=AOP^BOP;
-                  break;
-               case 15:	// A XNOR B
-                  Y=AOP^BOP^ALUSIZEMASK;
-                  break;
-            }
-            Flags.Zero=(Y&0xFFFF0000)?0:1;
-            Flags.Nega=(Y>>31)?1:0;
-            fExact=(Y&0x0000F000)?0:1;
-
-            //and BarrelShifter
-            switch(flags.BS)
-            {
-               case 1:
-               case 17:
-                  Y=Y<<1;
-                  break;
-               case 2:
-               case 18:
-                  Y=Y<<2;
-                  break;
-               case 3:
-               case 19:
-                  Y=Y<<3;
-                  break;
-               case 4:
-               case 20:
-                  Y=Y<<4;
-                  break;
-               case 5:
-               case 21:
-                  Y=Y<<5;
-                  break;
-               case 6:
-               case 22:
-                  Y=Y<<8;
-                  break;
-
-                  //arithmetic shifts
-               case 9:
-                  Y=(signed int)Y>>16;
-                  Y&=ALUSIZEMASK;
-                  break;
-               case 10:
-                  Y=(signed int)Y>>8;
-                  Y&=ALUSIZEMASK;
-                  break;
-               case 11:
-                  Y=(signed int)Y>>5;
-                  Y&=ALUSIZEMASK;
-                  break;
-               case 12:
-                  Y=(signed int)Y>>4;
-                  Y&=ALUSIZEMASK;
-                  break;
-               case 13:
-                  Y=(signed int)Y>>3;
-                  Y&=ALUSIZEMASK;
-                  break;
-               case 14:
-                  Y=(signed int)Y>>2;
-                  Y&=ALUSIZEMASK;
-                  break;
-               case 15:
-                  Y=(signed int)Y>>1;
-                  Y&=ALUSIZEMASK;
-                  break;
-
-                  // logocal shift
-               case 7: // CLIP ari
-               case 23:// CLIP log
-                  if(1&Flags.Over)
-                  {
-                     if(1&Flags.Nega)	Y=0x7FFFf000;
-                     else				Y=0x80000000;
-                  }
-                  break;
-               case 8: // Load operand load sameself again (ari)
-               case 24:// same, but logicalshift
-                  {
-                     //int temp=Flags.Carry;
-                     Flags.Carry=(signed)Y<0;	// shift out bit to Carry
-                     //Y=Y<<1;
-                     //Y|=temp<<16;
-                     Y=((Y<<1)&0xfffe0000)|(Flags.Carry?1<<16:0)|(Y&0xf000);
-                  }
-                  break;
-               case 25:
-                  Y=(unsigned int)Y>>16;
-                  Y&=ALUSIZEMASK;
-                  break;
-               case 26:
-                  Y=(unsigned int)Y>>8;
-                  Y&=ALUSIZEMASK;
-                  break;
-               case 27:
-                  Y=(unsigned int)Y>>5;
-                  Y&=ALUSIZEMASK;
-                  break;
-               case 28:
-                  Y=(unsigned int)Y>>4;
-                  Y&=ALUSIZEMASK;
-                  break;
-               case 29:
-                  Y=(unsigned int)Y>>3;
-                  Y&=ALUSIZEMASK;
-                  break;
-               case 30:
-                  Y=(unsigned int)Y>>2;
-                  Y&=ALUSIZEMASK;
-                  break;
-               case 31:
-                  Y=(unsigned int)Y>>1;
-                  Y&=ALUSIZEMASK;
-                  break;
-            }
-
-            //now write back. (assuming in WRITEBACK there is an address where to write
-            if(flags.WRITEBACK)
-               iwriteh(flags.WRITEBACK,((signed int)Y)>>16);
-         }
-
-      }while(Work);//big while!!!
+		do
+		{
+			inst.raw=NMem[dregs.PC++];
 
 
-      if(1&flags.GenFIQ)
-      {
-         flags.GenFIQ=false;
-         _clio_GenerateFiq(0x800,0);//AudioFIQ
-         //printf("#!!! AudioFIQ Generated 0x%4.4X\n!!!",val);
-      }
+			switch(inst.aif.PAD)
+			{
+				 case 0:
+					flags.req.raw=INSTTRAS[inst.raw].req.raw;
+					flags.BS     =INSTTRAS[inst.raw].BS;
 
-      dregs.DSPPCNT-=567;
-      if(dregs.DSPPCNT<=0)
-         dregs.DSPPCNT+=dregs.DSPPRLD;
-   }
+					OperandLoader(inst.aif.NUMOPS);
+
+					switch(inst.aif.MUXA)
+					{
+					   case 3:
+						  if(inst.aif.M2SEL==0)
+						  {
+							 if((inst.aif.ALU==3)||(inst.aif.ALU==5)) // ACSBU signal
+								AOP=Flags.Carry? ((int)flags.MULT1<<16)&ALUSIZEMASK : 0;
+							 else
+								AOP=( ((int)flags.MULT1*(((signed int)Y>>15)&~1))&ALUSIZEMASK );
+						  }
+						  else
+							 AOP=( ((int)flags.MULT1*(int)flags.MULT2*2)&ALUSIZEMASK );
+						  break;
+					   case 1:
+						  AOP=flags.ALU1<<16;
+						  break;
+					   case 0:
+						  AOP=Y;
+						  break;
+					   case 2:
+						  AOP=flags.ALU2<<16;
+						  break;
+					}
+
+					switch(inst.aif.ALU)
+					{
+							case 3:
+							case 5:
+								BOP=Flags.Carry<<16;
+								break;
+					
+							default:
+								switch(inst.aif.MUXB)
+								{
+								case 0:
+									BOP=Y;
+									break;
+								case 1:
+									BOP=flags.ALU1<<16;
+									break;
+								case 2:
+									BOP=flags.ALU2<<16;
+									break;
+								case 3:
+									switch(inst.aif.MUXB)
+									{
+									case 0:
+										BOP=( ((int)flags.MULT1*(((signed int)Y>>15))&~1)&ALUSIZEMASK );
+										break;
+									default:
+										BOP=( ((int)flags.MULT1*(int)flags.MULT2*2)&ALUSIZEMASK );
+										break;
+									};
+									break;
+								}
+							break;
+					};
+
+					//ok now ALU itself.
+					//unsigned char ctt1,ctt2;
+					Flags.Over=Flags.Carry=0; // Any ALU op. change Over and possible Carry
+					
+					switch(inst.aif.ALU)
+					{
+					   case 0:
+						  Y=AOP;
+						  break;
+						  //*
+					   case 1:
+						  Y=0-BOP;
+						  Flags.Carry=SUBCFLAG(0,BOP,Y);
+						  Flags.Over=SUBVFLAG(0,BOP,Y);
+						  break;
+					   case 2:
+					   case 3:
+						  Y=AOP+BOP;
+						  Flags.Carry=ADDCFLAG(AOP,BOP,Y);
+						  Flags.Over=ADDVFLAG(AOP,BOP,Y);
+						  break;
+					   case 4:
+					   case 5:
+						  Y=AOP-BOP;
+						  Flags.Carry=SUBCFLAG(AOP,BOP,Y);
+						  Flags.Over=SUBVFLAG(AOP,BOP,Y);
+						  break;
+					   case 6:
+						  Y=AOP+0x1000;
+						  Flags.Carry=ADDCFLAG(AOP,0x1000,Y);
+						  Flags.Over=ADDVFLAG(AOP,0x1000,Y);
+						  break;
+					   case 7:
+						  Y=AOP-0x1000;
+						  Flags.Carry=SUBCFLAG(AOP,0x1000,Y);
+						  Flags.Over=SUBVFLAG(AOP,0x1000,Y);
+						  break;
+
+					   case 8:		// A
+						  Y=AOP;
+						  break;
+					   case 9:		// NOT A
+						  Y=AOP^ALUSIZEMASK;
+						  break;
+					   case 10:	// A AND B
+						  Y=AOP&BOP;
+						  break;
+					   case 11:	// A NAND B
+						  Y=(AOP&BOP)^ALUSIZEMASK;
+						  break;
+					   case 12:	// A OR B
+						  Y=AOP|BOP;
+						  break;
+					   case 13:	// A NOR B
+						  Y=(AOP|BOP)^ALUSIZEMASK;
+						  break;
+					   case 14:	// A XOR B
+						  Y=AOP^BOP;
+						  break;
+					   case 15:	// A XNOR B
+						  Y=AOP^BOP^ALUSIZEMASK;
+						  break;
+					}
+					
+					Flags.Zero=(Y&0xFFFF0000)?0:1;
+					Flags.Nega=(Y>>31)?1:0;
+					fExact=(Y&0x0000F000)?0:1;
+
+					//and BarrelShifter
+					switch(flags.BS)
+					{
+					   case 1:
+					   case 17:
+						  Y=Y<<1;
+						  break;
+					   case 2:
+					   case 18:
+						  Y=Y<<2;
+						  break;
+					   case 3:
+					   case 19:
+						  Y=Y<<3;
+						  break;
+					   case 4:
+					   case 20:
+						  Y=Y<<4;
+						  break;
+					   case 5:
+					   case 21:
+						  Y=Y<<5;
+						  break;
+					   case 6:
+					   case 22:
+						  Y=Y<<8;
+						  break;
+
+						  //arithmetic shifts
+					   case 9:
+						  Y=(signed int)Y>>16;
+						  Y&=ALUSIZEMASK;
+						  break;
+					   case 10:
+						  Y=(signed int)Y>>8;
+						  Y&=ALUSIZEMASK;
+						  break;
+					   case 11:
+						  Y=(signed int)Y>>5;
+						  Y&=ALUSIZEMASK;
+						  break;
+					   case 12:
+						  Y=(signed int)Y>>4;
+						  Y&=ALUSIZEMASK;
+						  break;
+					   case 13:
+						  Y=(signed int)Y>>3;
+						  Y&=ALUSIZEMASK;
+						  break;
+					   case 14:
+						  Y=(signed int)Y>>2;
+						  Y&=ALUSIZEMASK;
+						  break;
+					   case 15:
+						  Y=(signed int)Y>>1;
+						  Y&=ALUSIZEMASK;
+						  break;
+
+						  // logocal shift
+					   case 7: // CLIP ari
+					   case 23:// CLIP log
+						  if(1&Flags.Over)
+						  {
+							 if(1&Flags.Nega)	Y=0x7FFFf000;
+							 else				Y=0x80000000;
+						  }
+						  break;
+					   case 8: // Load operand load sameself again (ari)
+					   case 24:// same, but logicalshift
+						  {
+							 //int temp=Flags.Carry;
+							 Flags.Carry=(signed)Y<0;	// shift out bit to Carry
+							 //Y=Y<<1;
+							 //Y|=temp<<16;
+							 Y=((Y<<1)&0xfffe0000)|(Flags.Carry?1<<16:0)|(Y&0xf000);
+						  }
+						  break;
+					   case 25:
+						  Y=(unsigned int)Y>>16;
+						  Y&=ALUSIZEMASK;
+						  break;
+					   case 26:
+						  Y=(unsigned int)Y>>8;
+						  Y&=ALUSIZEMASK;
+						  break;
+					   case 27:
+						  Y=(unsigned int)Y>>5;
+						  Y&=ALUSIZEMASK;
+						  break;
+					   case 28:
+						  Y=(unsigned int)Y>>4;
+						  Y&=ALUSIZEMASK;
+						  break;
+					   case 29:
+						  Y=(unsigned int)Y>>3;
+						  Y&=ALUSIZEMASK;
+						  break;
+					   case 30:
+						  Y=(unsigned int)Y>>2;
+						  Y&=ALUSIZEMASK;
+						  break;
+					   case 31:
+						  Y=(unsigned int)Y>>1;
+						  Y&=ALUSIZEMASK;
+						  break;
+					}
+
+					//now write back. (assuming in WRITEBACK there is an address where to write
+					if(flags.WRITEBACK)
+					   iwriteh(flags.WRITEBACK,((signed int)Y)>>16);
+				 break;	
+				 default:
+					switch((inst.raw>>7)&255) //special
+					{
+					   case 0://NOP TODO
+						  break;
+					   case 1://branch accum
+						  dregs.PC=(Y>>16)&0x3ff;
+						  break;
+					   case 2://set rbase
+						  RBASEx4=(inst.cif.BCH_ADDR&0x3f)<<2;
+						  break;
+					   case 3://set rmap
+						  REGi=inst.cif.BCH_ADDR&7;
+						  break;
+					   case 4://RTS
+						  dregs.PC=RBSR;
+						  break;
+					   case 5://set op_mask
+						  flags.nOP_MASK=~(inst.cif.BCH_ADDR&0x1f);
+						  break;
+					   case 6:// -not used2- ins
+						  break;
+					   case 7://SLEEP
+						  Work=false;
+						  break;
+					   case 8:  case 9:  case 10: case 11:
+					   case 12: case 13: case 14: case 15:
+						  //jump //branch only if not branched
+						  dregs.PC=inst.cif.BCH_ADDR;
+						  break;
+					   case 16: case 17: case 18: case 19:
+					   case 20: case 21: case 22: case 23:
+						  //jsr
+						  RBSR=dregs.PC;
+						  dregs.PC=inst.cif.BCH_ADDR;
+						  break;
+					   case 24: case 25: case 26: case 27:
+					   case 28: case 29: case 30: case 31:
+						  // branch only if was branched
+						  dregs.PC=inst.cif.BCH_ADDR;
+						  break;
+					   case 32: case 33: case 34: case 35:
+					   case 36: case 37: case 38: case 39:
+					   case 40: case 41: case 42: case 43: // ??? -not used- instr's
+					   case 44: case 45: case 46: case 47: // ??? -not used- instr's
+						  // MOVEREG
+						  {
+							 if(inst.r2of.R1_DI)
+								iwriteh(ireadh(REGCONV[REGi][inst.r2of.R1]^RBASEx4),OperandLoaderNWB());
+							 else
+								iwriteh(REGCONV[REGi][inst.r2of.R1]^RBASEx4,OperandLoaderNWB());
+						  }
+						  break;
+					   case 48: case 49: case 50: case 51:
+					   case 52: case 53: case 54: case 55:
+					   case 56: case 57: case 58: case 59:
+					   case 60: case 61: case 62: case 63:
+						  // MOVE
+						  {
+							 if(inst.nrof.DI)
+								iwriteh(ireadh(inst.cif.BCH_ADDR),OperandLoaderNWB());
+							 else
+								iwriteh(inst.cif.BCH_ADDR,OperandLoaderNWB());
+						  }
+						  break;
+					   default: // Coundition branch
+						  if(BRCONDTAB[inst.br.bits][fExact+((Flags.raw*0x10080402)>>24)]) dregs.PC=inst.cif.BCH_ADDR;
+						  break;
+					}
+				 break;
+			}
+
+		}while(Work);//big while!!!
+
+
+		if(flags.GenFIQ)
+		{
+			flags.GenFIQ=false;
+			_clio_GenerateFiq(0x800,0);//AudioFIQ
+		}
+
+		dregs.DSPPCNT-=567;
+		if(dregs.DSPPCNT<=0)
+			dregs.DSPPCNT+=dregs.DSPPRLD;
+	}
    return ((IMem[0x3ff]<<16)|IMem[0x3fe]);
 }
 
@@ -810,7 +819,7 @@ uint16_t  RegBase(unsigned int reg)
    return ((reg & 7) | (twi << 8) | (reg >> 3) << 9);
 }
 
-uint16_t  ireadh(unsigned int addr) //DSP IREAD (includes EI, I)
+INLINE uint16_t ireadh(unsigned int addr) //DSP IREAD (includes EI, I)
 {
    uint16_t val;
 
@@ -891,7 +900,7 @@ uint16_t  ireadh(unsigned int addr) //DSP IREAD (includes EI, I)
    return IMem[addr&0x7f];
 }
 
-void  iwriteh(unsigned int addr, uint16_t val) //DSP IWRITE (includes EO,I)
+INLINE void iwriteh(unsigned int addr, uint16_t val) //DSP IWRITE (includes EO,I)
 {
    //uint16_t imem;
    addr&=0x3ff;
@@ -933,10 +942,10 @@ void  iwriteh(unsigned int addr, uint16_t val) //DSP IWRITE (includes EO,I)
             return;
 
          addr-=0x100;
-         if(addr<0x200)
+         /*if(addr<0x200)*/
             IMem[addr | 0x100]=val;
-         else
-            IMem[addr + 0x100]=val;
+		 /*else
+            IMem[addr + 0x100]=val;*/
          break;
    }
 }
@@ -948,26 +957,30 @@ void  _dsp_SetRunning(bool val)
 
 void  _dsp_WriteIMem(uint16_t addr, uint16_t val)//CPU writes to EI,I of DSP
 {
-   if (addr >= 0x70 && addr <= 0x7c)
+	switch(addr)
+	{
+		case 0x70:	case 0x71:	case 0x72:	case 0x73:
+		case 0x74:	case 0x75:	case 0x76:	case 0x77:
+		case 0x78:	case 0x79:	case 0x7a:	case 0x7b:
+		case 0x7c:
+			CPUSupply[addr-0x70]=1;
+			IMem[addr&0x7f]=val;
+		break;
+		default:
+			if(!(addr&0x80))IMem[addr&0x7f]=val;
+		break;
+	}
+   /*if (addr >= 0x70 && addr <= 0x7c)
    {
       CPUSupply[addr-0x70]=1;
-      //printf("# Coeff ARM write=0x%3.3X, val=0x%4.4X\n",addr,val);
       IMem[addr&0x7f]=val;
-#if 0
-      printf(">>>ARM TO DSP FIFO DIRECT!!!\n");
-#endif
+
    }
    else
    {
       if(!(addr&0x80))
          IMem[addr&0x7f]=val;
-      else
-      {
-#if 0
-         printf(">>>ARM TO DSP HZ!!!\n");
-#endif
-      }
-   }
+   }*/
 }
 
 void  _dsp_ARMwrite2sema4(unsigned int val)
@@ -975,8 +988,6 @@ void  _dsp_ARMwrite2sema4(unsigned int val)
    // How about Sema4ACK? Now don't think about it
    dregs.Sema4Data=val&0xffff;	// ARM write to Sema4Data low 16 bits
    dregs.Sema4Status=0x8;		// ARM be last
-   //printf("#Arm write Sema4Data=0x%4.4X\n",val);
-   //printf("Sema4Status set to 0x%4.4X\n",dregs.Sema4Status);
 }
 
 
@@ -1036,69 +1047,89 @@ void  OperandLoader(int Requests)
    do
    {
       operand.raw=NMem[dregs.PC++];
-      if(operand.nrof.TYPE==4)
+      
+      switch(operand.nrof.TYPE)
       {
-         //non reg format ///IT'S an address!!!
-         if(operand.nrof.DI)
-            OperandPool[Operands]=ireadh(flags.WRITEBACK=ireadh(operand.nrof.OP_ADDR));
-         else
-            OperandPool[Operands]=ireadh(flags.WRITEBACK=       operand.nrof.OP_ADDR);
-         Operands++;
+		  case 4:
+			switch(operand.nrof.DI)
+			{
+				case 0:
+					OperandPool[Operands]=ireadh(flags.WRITEBACK=       operand.nrof.OP_ADDR);
+				break;
+				default:
+					OperandPool[Operands]=ireadh(flags.WRITEBACK=ireadh(operand.nrof.OP_ADDR));
+				break;
+			}
+			Operands++;
+			
+			if(operand.nrof.WB1)
+				GWRITEBACK=flags.WRITEBACK;
+		  break;
+		  
+		  case 6:
+		  case 7:
+			 OperandPool[Operands]=operand.iof.IMMEDIATE<<(operand.iof.JUSTIFY&3);
+			 flags.WRITEBACK=OperandPool[Operands++];
+		  break;
+		  
+		  case 1:
+		  case 2:
+		  case 3:
+				switch(operand.r3of.R3_DI)
+				{
+				case 0:
+					OperandPool[Operands]=ireadh(REGCONV[REGi][operand.r3of.R3]^RBASEx4 );
+					break;
+				default:
+					OperandPool[Operands]=ireadh(ireadh(REGCONV[REGi][operand.r3of.R3]^RBASEx4));
+					break;
+				};
 
-         if(operand.nrof.WB1)
-            GWRITEBACK=flags.WRITEBACK;
+				switch(operand.r3of.R2_DI)
+				{
+				case 0:
+					OperandPool[Operands]=ireadh(REGCONV[REGi][operand.r3of.R2]^RBASEx4 );
+					break;
+				default:
+					OperandPool[Operands]=ireadh(ireadh(REGCONV[REGi][operand.r3of.R2]^RBASEx4));
+					break;
+				};
 
-      }else if ((operand.nrof.TYPE&6)==6)
-      {
-         //case 6: and case 7:  immediate format
-         OperandPool[Operands]=operand.iof.IMMEDIATE<<(operand.iof.JUSTIFY&3);
-         flags.WRITEBACK=OperandPool[Operands++];
+				switch(operand.r3of.R1_DI)
+				{
+				case 0:
+					OperandPool[Operands]=ireadh(flags.WRITEBACK=       REGCONV[REGi][operand.r3of.R1]^RBASEx4 );
+					break;
+				default:
+					OperandPool[Operands]=ireadh(flags.WRITEBACK=ireadh(REGCONV[REGi][operand.r3of.R1]^RBASEx4));
+					break;
+				};
+				Operands+=3;
+		  break;
+		default:
+				//regged 1/2 format
+				if(operand.r2of.NUMREGS)
+				{
+					if(operand.r2of.R2_DI)
+						OperandPool[Operands]=ireadh(flags.WRITEBACK=ireadh(REGCONV[REGi][operand.r2of.R2]^RBASEx4));
+					else
+						OperandPool[Operands]=ireadh(flags.WRITEBACK=REGCONV[REGi][operand.r2of.R2]^RBASEx4 );
+					Operands++;
 
-      }else if(!(operand.nrof.TYPE&4))  // case 0..3
-      {
-         if(operand.r3of.R3_DI)
-            OperandPool[Operands]=ireadh(ireadh(REGCONV[REGi][operand.r3of.R3]^RBASEx4));
-         else
-            OperandPool[Operands]=ireadh(       REGCONV[REGi][operand.r3of.R3]^RBASEx4 );
-         Operands++;
+					if(operand.r2of.WB2)
+						GWRITEBACK=flags.WRITEBACK;
+				}
 
-         if(operand.r3of.R2_DI)
-            OperandPool[Operands]=ireadh(ireadh(REGCONV[REGi][operand.r3of.R2]^RBASEx4));
-         else
-            OperandPool[Operands]=ireadh(       REGCONV[REGi][operand.r3of.R2]^RBASEx4 );
-         Operands++;
+				if(operand.r2of.R1_DI)
+					OperandPool[Operands]=ireadh(flags.WRITEBACK=ireadh(REGCONV[REGi][operand.r2of.R1]^RBASEx4));
+				else
+					OperandPool[Operands]=ireadh(flags.WRITEBACK=REGCONV[REGi][operand.r2of.R1]^RBASEx4 );
+				Operands++;
 
-         // only R1 can be WRITEBACK
-         if(operand.r3of.R1_DI)
-            OperandPool[Operands]=ireadh(flags.WRITEBACK=ireadh(REGCONV[REGi][operand.r3of.R1]^RBASEx4));
-         else
-            OperandPool[Operands]=ireadh(flags.WRITEBACK=       REGCONV[REGi][operand.r3of.R1]^RBASEx4 );
-         Operands++;
-
-      }else //if(operand.nrof.TYPE==5)
-      {
-         //regged 1/2 format
-         if(operand.r2of.NUMREGS)
-         {
-            if(operand.r2of.R2_DI)
-               OperandPool[Operands]=ireadh(flags.WRITEBACK=ireadh(REGCONV[REGi][operand.r2of.R2]^RBASEx4));
-            else
-               OperandPool[Operands]=ireadh(flags.WRITEBACK=       REGCONV[REGi][operand.r2of.R2]^RBASEx4 );
-            Operands++;
-
-            if(operand.r2of.WB2)
-               GWRITEBACK=flags.WRITEBACK;
-         }
-
-         if(operand.r2of.R1_DI)
-            OperandPool[Operands]=ireadh(flags.WRITEBACK=ireadh(REGCONV[REGi][operand.r2of.R1]^RBASEx4));
-         else
-            OperandPool[Operands]=ireadh(flags.WRITEBACK=       REGCONV[REGi][operand.r2of.R1]^RBASEx4 );
-         Operands++;
-
-         if(operand.r2of.WB1)
-            GWRITEBACK=flags.WRITEBACK;
-      }//if
+				if(operand.r2of.WB1)
+					GWRITEBACK=flags.WRITEBACK;
+	  };
+      
    }while(Operands<Requests);
 
 
@@ -1124,7 +1155,6 @@ void  OperandLoader(int Requests)
    {
       if(GWRITEBACK)
          flags.WRITEBACK=GWRITEBACK;
-      //else flags.WRITEBACK=0;
    }
    else
       flags.WRITEBACK=GWRITEBACK;

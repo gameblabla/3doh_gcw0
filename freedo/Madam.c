@@ -1591,7 +1591,7 @@ unsigned int  PPROC(unsigned int pixel, unsigned int fpix, unsigned int amv)
    out.r16b.b=color2.B;
 
    // TODO: Is this something the PROJECTOR should do?
-   if(!(CCBFLAGS&CCB_NOBLK) && out.raw==0) out.raw=1<<10;
+   //if(!(CCBFLAGS&CCB_NOBLK) && out.raw==0) out.raw=1<<10;
 
    //if(!(PRE1&PRE1_NOSWAP) && (CCBCTL0&(1<<27)))
    //out.raw=(out.raw&0x7ffe)|((out.raw&0x8000)>>15)|((out.raw&1)<<15);

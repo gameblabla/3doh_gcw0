@@ -544,6 +544,13 @@ static INLINE void SETF(bool a) { CPSR=(CPSR&0xffffffbf)|((a?1<<6:0)); }
 
 #define ROTR(val, shift) ((shift)) ? (((val) >> (shift)) | ((val) << (32 - (shift)))) : (val)
 
+static inline unsigned long _rotr(unsigned long val, unsigned long shift)
+{
+        if(!shift)return val;
+        return (val>>shift)|(val<<(32-shift));
+}
+
+
 uint8_t * _arm_Init(void)
 {
    int i;
@@ -1176,7 +1183,10 @@ void ARM_SWAP(uint32_t cmd)
 
 static INLINE uint32_t calcbits(uint32_t num)
 {
-   uint32_t retval;
+ 	if((num&0xFFFF0000)&&(num&0x0000FFFF))
+		return 32; //3doh fix
+	return 0;
+   /*uint32_t retval;
 
    if(!num)
       return 1;
@@ -1199,7 +1209,7 @@ static INLINE uint32_t calcbits(uint32_t num)
       num>>=4;
       retval+=4;
    }
-   //if(num>>6){num>>=6;retval+=6;} //JMK NOTE: I saw this in 3DOplay... why was it here? It was not in the FreeDO core I got.
+
    if(num>>2)
    {
       num>>=2;
@@ -1213,7 +1223,7 @@ static INLINE uint32_t calcbits(uint32_t num)
    else if(num)
       retval++;
 
-   return retval;
+   return retval;*/
 }
 
 uint32_t curr_pc;
@@ -1225,6 +1235,551 @@ const bool is_logic[]={
    true,true,true,true
 };
 
+
+
+void arm60_BRANCH(unsigned long cmd)
+{
+
+					if(cmd&(1<<24))
+					{
+						RON_USER[14]=REG_PC;
+					}
+					REG_PC+=(((cmd&0xffffff)|((cmd&0x800000)?0xff000000:0))<<2)+4;
+
+
+
+					CYCLES-=SCYCLE+NCYCLE; //2S+1N
+
+}
+
+void arm60_MULT(unsigned long cmd)
+{
+
+					unsigned int res;
+
+
+						res=((calcbits(RON_USER[(cmd>>8)&0xf])+5)>>1)-1;
+						if(res>16)CYCLES-=16;
+						else CYCLES-=res;
+
+						if(((cmd>>16)&0xf)==(cmd&0xf))
+						{
+							if (cmd&(1<<21))
+//							switch(cmd)
+                            {
+//							case 0x10000:
+                            	REG_PC+=8;
+                            	res=RON_USER[(cmd>>12)&0xf];
+                                REG_PC-=8;
+//								break;
+                            }
+                            else
+							{
+//							default:
+                                res=0;
+//								break;
+							}
+						}
+						else
+						{
+							if (cmd&(1<<21))
+//							switch
+                            {
+                            	res=RON_USER[cmd&0xf]*RON_USER[(cmd>>8)&0xf];
+                                REG_PC+=8;
+                                res+=RON_USER[(cmd>>12)&0xf];
+                                REG_PC-=8;
+                            }
+                            else
+                                res=RON_USER[cmd&0xf]*RON_USER[(cmd>>8)&0xf];
+						}
+						if(cmd&(1<<20))
+						{
+							ARM_SET_ZN(res);
+						}
+
+						RON_USER[(cmd>>16)&0xf]=res;
+					
+
+}
+
+void arm60_SDT(unsigned long cmd)
+{
+
+					unsigned char shift,shtype;
+					unsigned long pc_tmp,cmd_tmp;
+
+					  unsigned int base,tbas;
+					  unsigned int oper2;
+					  unsigned int val, rora;
+					  //uint8	delta;
+
+                      pc_tmp=REG_PC;
+                      REG_PC+=4;
+					  cmd_tmp=cmd>>25&0x1;
+					  switch(cmd_tmp)
+//					  if(cmd&(1<<25)) //inmediate
+					  {
+					  case 1:
+                            shtype=(cmd>>5)&0x3;
+							cmd_tmp=cmd>>4&0x1;
+								switch(cmd_tmp)
+        //                    if(cmd&(1<<4))
+								{
+								case 1:
+                          //      shift=((cmd>>8)&0xf);
+                                	shift=(RON_USER[(cmd>>8)&0xf])&0xff;
+	                                REG_PC+=4;
+									break;
+          //	                  }
+          //                  else
+          //                  {
+								default:
+    	                            shift=(cmd>>7)&0x1f;
+    	                            if(!shift) //revisar
+    	                            {
+//                                   if(shtype)
+										switch(shtype)
+										{
+										case 0:
+											break;
+										case 3:
+											shtype++;
+											break;
+										default:
+											shift=32;
+											break;
+										};
+//                                    {
+//                                       if(shtype==3)shtype++;
+//                                        else shift=32;
+                                    }
+									break;
+								};
+//                            }
+							oper2=ARM_SHIFT_NSC(RON_USER[cmd&0xf], shift, shtype);
+
+//					  }
+					  break;
+//					  else
+//					  {
+					  default:
+							oper2=(cmd&0xfff);
+							break;
+					  };
+
+
+					  tbas=base=RON_USER[((cmd>>16)&0xf)];
+
+
+					  if(!(cmd&(1<<23))) oper2=0-oper2;
+
+					  if(cmd&(1<<24)) tbas=base=base+oper2;
+					  else base=base+oper2;
+
+
+					  if(cmd&(1<<20)) //load
+					  {
+						  if(cmd&(1<<22))//bytes
+						  {
+							val=mreadb(tbas)&0xff;
+						  }
+						  else //words/halfwords
+						  {
+							val=mreadw(tbas);
+                            rora=tbas&3;
+							if((rora)) val=_rotr(val,rora*8);
+						  }
+
+						  if(((cmd>>12)&0xf)==0xf)
+						  {
+							  CYCLES-=SCYCLE+NCYCLE;   // +1S+1N if R15 load
+						  }
+
+						  CYCLES-=NCYCLE+ICYCLE;  // +1N+1I
+                          REG_PC=pc_tmp;
+
+						  if ((cmd&(1<<21)) || (!(cmd&(1<<24)))) load((cmd>>16)&0xf,base);
+
+						  if((cmd&(1<<21)) && !(cmd&(1<<24)))
+							  loadusr((cmd>>12)&0xf,val);//privil mode
+						  else
+							  load((cmd>>12)&0xf,val);
+
+					  }
+					  else
+					  { // store
+
+						  if((cmd&(1<<21)) && !(cmd&(1<<24)))
+						  	  val=rreadusr((cmd>>12)&0xf);// privil mode
+						  else
+							  val=RON_USER[(cmd>>12)&0xf];
+
+						  //if(((cmd>>12)&0xf)==0xf)val+=delta;
+                          REG_PC=pc_tmp;
+						  CYCLES-=-SCYCLE+2*NCYCLE;  // 2N
+
+						  if(cmd&(1<<22))//bytes/words
+						  	mwriteb(tbas,val);
+						  else //words/halfwords
+						  	mwritew(tbas,val);
+
+						  if ( (cmd&(1<<21)) || !(cmd&(1<<24)) ) load((cmd>>16)&0xf,base);
+
+					  }
+
+					  //if(MAS_Access_Exept)
+
+
+}
+
+void arm60_COPRO(unsigned long cmd)
+{
+
+					SPSR[arm_mode_table[0x1b]]=CPSR;
+					SETI(1);
+					SETM(0x1b);
+					load(14,REG_PC);
+					REG_PC=0x00000004;
+					CYCLES-=SCYCLE+NCYCLE;
+
+}
+
+
+void arm60_ALU(unsigned long cmd)
+{
+
+					unsigned char shift,shtype;
+                    unsigned long op2,op1,pc_tmp;
+							  /////////////////////////////////////////////SHIFT
+                                pc_tmp=REG_PC;
+                                REG_PC+=4;
+								if (cmd&(1<<25))
+								{
+									op2=cmd&0xff;
+									if(((cmd>>7)&0x1e))
+									{
+										op2=_rotr(op2, (cmd>>7)&0x1e);
+									}
+									op1=RON_USER[(cmd>>16)&0xf];
+								}
+								else
+								{
+									shtype=(cmd>>5)&0x3;
+									if(cmd&(1<<4))
+									{
+										shift=((cmd>>8)&0xf);
+										shift=(RON_USER[shift])&0xff;
+                                        REG_PC+=4;
+										op2=RON_USER[cmd&0xf];
+										op1=RON_USER[(cmd>>16)&0xf];
+										CYCLES-=ICYCLE;
+									}
+									else
+									{
+										shift=(cmd>>7)&0x1f;
+
+										if(!shift)
+										{
+											if(shtype)
+											{
+												if(shtype==3)shtype++;
+												else shift=32;
+											}
+										}
+										op2=RON_USER[cmd&0xf];
+										op1=RON_USER[(cmd>>16)&0xf];
+									}
+                                        op2=ARM_SHIFT_NSC(op2, shift, shtype);
+								}
+
+                              REG_PC=pc_tmp;
+
+                              if((cmd&(1<<20)) && is_logic[((cmd>>21)&0xf)] ) ARM_SET_C(carry_out);
+
+//static inline bool __fastcall ARM_ALU_Exec(uint32 inst, uint8 opc, uint32 op1, uint32 op2, uint32 *Rd)
+//							  if(ARM_ALU_Exec(cmd, (cmd>>20)&0x1f ,op1,op2,&RON_USER[(cmd>>12)&0xf]))
+//							  {
+
+									switch((cmd>>20)&0x1f)
+									 {
+									   case 0:
+											RON_USER[(cmd>>12)&0xf]=op1&op2;
+											break;
+									   case 2:
+											RON_USER[(cmd>>12)&0xf]=op1^op2;
+											break;
+									   case 4:
+											RON_USER[(cmd>>12)&0xf]=op1-op2;
+											break;
+									   case 6:
+											RON_USER[(cmd>>12)&0xf]=op2-op1;
+											break;
+									   case 8:
+											RON_USER[(cmd>>12)&0xf]=op1+op2;
+											break;
+									   case 10:
+											RON_USER[(cmd>>12)&0xf]=op1+op2+ARM_GET_C;
+											break;
+									   case 12:
+											RON_USER[(cmd>>12)&0xf]=op1-op2-(ARM_GET_C^1);
+											break;
+									   case 14:
+											RON_USER[(cmd>>12)&0xf]=op2-op1-(ARM_GET_C^1);
+											break;
+									   case 16:
+									   case 20:
+											if((cmd>>22)&1)
+												RON_USER[(cmd>>12)&0xf]=SPSR[arm_mode_table[CPSR&0x1f]];
+											else
+												RON_USER[(cmd>>12)&0xf]=CPSR;
+
+											return;
+									   case 18:
+									   case 22:
+											if(!((cmd>>16)&0x1) || !(arm_mode_table[MODE]))
+											{
+												if((cmd>>22)&1)
+													SPSR[arm_mode_table[MODE]]=(SPSR[arm_mode_table[MODE]]&0x0fffffff)|(op2&0xf0000000);
+												else
+													CPSR=(CPSR&0x0fffffff)|(op2&0xf0000000);
+											}
+											else
+											{
+												if((cmd>>22)&1)
+													SPSR[arm_mode_table[MODE]]=op2&0xf00000df;
+												else
+													_arm_SetCPSR(op2);
+											}
+											return;
+									   case 24:
+											RON_USER[(cmd>>12)&0xf]=op1|op2;
+											break;
+									   case 26:
+											RON_USER[(cmd>>12)&0xf]=op2;
+											break;
+									   case 28:
+											RON_USER[(cmd>>12)&0xf]=op1&(~op2);
+											break;
+									   case 30:
+											RON_USER[(cmd>>12)&0xf]=~op2;
+											break;
+									   case 1:
+											RON_USER[(cmd>>12)&0xf]=op1&op2;
+											ARM_SET_ZN(RON_USER[(cmd>>12)&0xf]);
+											break;
+									   case 3:
+											RON_USER[(cmd>>12)&0xf]=op1^op2;
+											ARM_SET_ZN(RON_USER[(cmd>>12)&0xf]);
+											break;
+									   case 5:
+											RON_USER[(cmd>>12)&0xf]=op1-op2;
+											ARM_SET_ZN(RON_USER[(cmd>>12)&0xf]);
+											ARM_SET_CV_sub(RON_USER[(cmd>>12)&0xf],op1,op2);
+											break;
+									   case 7:
+											RON_USER[(cmd>>12)&0xf]=op2-op1;
+											ARM_SET_ZN(RON_USER[(cmd>>12)&0xf]);
+											ARM_SET_CV_sub(RON_USER[(cmd>>12)&0xf],op2,op1);
+											break;
+									   case 9:
+											RON_USER[(cmd>>12)&0xf]=op1+op2;
+											ARM_SET_ZN(RON_USER[(cmd>>12)&0xf]);
+											ARM_SET_CV(RON_USER[(cmd>>12)&0xf],op1,op2);
+											break;
+									   case 11:
+											RON_USER[(cmd>>12)&0xf]=op1+op2+ARM_GET_C;
+											ARM_SET_ZN(RON_USER[(cmd>>12)&0xf]);
+											ARM_SET_CV(RON_USER[(cmd>>12)&0xf],op1,op2);
+											break;
+									   case 13:
+											RON_USER[(cmd>>12)&0xf]=op1-op2-(ARM_GET_C^1);
+											ARM_SET_ZN(RON_USER[(cmd>>12)&0xf]);
+											ARM_SET_CV_sub(RON_USER[(cmd>>12)&0xf],op1,op2);
+											break;
+									   case 15:
+											RON_USER[(cmd>>12)&0xf]=op2-op1-(ARM_GET_C^1);
+											ARM_SET_ZN(RON_USER[(cmd>>12)&0xf]);
+											ARM_SET_CV_sub(RON_USER[(cmd>>12)&0xf],op2,op1);
+											break;//*/
+									   case 17:
+											op1&=op2;
+											ARM_SET_ZN(op1);
+											return;
+									   case 19:
+											op1^=op2;
+											ARM_SET_ZN(op1);
+											return;
+									   case 21:
+											ARM_SET_CV_sub(op1-op2,op1,op2);
+											ARM_SET_ZN(op1-op2);
+											return;
+									   case 23:
+											ARM_SET_CV(op1+op2,op1,op2);
+											ARM_SET_ZN(op1+op2);
+											return;
+									   case 25:
+											RON_USER[(cmd>>12)&0xf]=op1|op2;
+											ARM_SET_ZN(RON_USER[(cmd>>12)&0xf]);
+											break;
+									   case 27:
+											RON_USER[(cmd>>12)&0xf]=op2;
+											ARM_SET_ZN(RON_USER[(cmd>>12)&0xf]);
+											break;
+									   case 29:
+											RON_USER[(cmd>>12)&0xf]=op1&(~op2);
+											ARM_SET_ZN(RON_USER[(cmd>>12)&0xf]);
+											break;
+									   case 31:
+											RON_USER[(cmd>>12)&0xf]=~op2;
+											ARM_SET_ZN(RON_USER[(cmd>>12)&0xf]);
+											break;
+									 };
+
+
+									//	return;
+							  
+							  if(((cmd>>12)&0xf)==0xf) //destination = pc, take care of cpsr
+							  {
+								if(cmd&(1<<20))
+								{
+									_arm_SetCPSR(SPSR[arm_mode_table[MODE]]);
+								}
+								CYCLES-=ICYCLE+NCYCLE;
+							  }
+
+}
+
+
+
+int _arm_Execute(void)
+{
+    unsigned long cmd,pc_tmp,cmd_tmp;
+
+ 	cmd=mreadw(REG_PC);
+
+                #ifdef DEBUG_CORE
+                if(REG_PC<0x00300000)
+
+                {
+                        profiling[REG_PC>>2]++;
+                }
+                #endif
+
+	curr_pc=REG_PC;
+	REG_PC+=4;
+	CYCLES=-SCYCLE;
+		//if(MAS_Access_Exept)
+
+		if(((cond_flags_cross[((cmd)>>28)]>>((CPSR)>>28))&1))
+		{
+
+			if ((cmd & 0x0fc000f0) == 0x00000090)    /* Multiplication */
+			{
+					arm60_MULT(cmd);
+//					printf("%x\n",cmd);
+			}
+			else if (!(cmd & 0x0c000000)) /* Data processing */
+			{
+//				HandleALU(cpustate, insn);
+//				arm60_ALU(cmd);
+//				printf("%x\n",cmd);
+			}
+			else if ((cmd & 0x0c000000) == 0x04000000) /* Single data access */
+			{
+				arm60_SDT(cmd);
+//				HandleMemSingle(cpustate, insn);
+//				R15 += 4;
+			}
+			else if ((cmd & 0x0e000000) == 0x08000000 ) /* Block data access */
+			{
+//				HandleMemBlock(cpustate, insn);
+//				R15 += 4;
+				bdt_core(cmd);
+			}
+			else if ((cmd & 0x0e000000) == 0x0a000000)   /* Branch */
+			{
+//				HandleBranch(cpustate, insn);
+				arm60_BRANCH(cmd);
+			}
+			else if ((cmd & 0x0f000000) == 0x0e000000)   /* Coprocessor */
+			{
+	//			HandleCoPro(cpustate, insn);
+//				R15 += 4;
+				arm60_COPRO(cmd);
+			}
+			else if ((cmd & 0x0f000000) == 0x0f000000)   /* Software interrupt */
+			{
+				decode_swi(cmd);
+			}
+			else /* Undefined */
+			{
+					SPSR[arm_mode_table[0x1b]]=CPSR;
+					SETI(1);
+					SETM(0x1b);
+					load(14,REG_PC);
+					REG_PC=0x00000004;  // (-4) fetch!!!
+					CYCLES-=SCYCLE+NCYCLE; // +2S+1N
+//					break;
+			}
+
+/*************************************************************************************************/
+			switch((cmd>>24)&0xf) 
+			{
+			case 0x8:	//Block Data Transfer
+			case 0x9:
+//				bdt_core(cmd);
+				break;
+			case 0x0:	//Multiply
+				if ((cmd & ARM_MUL_MASK) == ARM_MUL_SIGN)
+				{
+//					arm60_MULT(cmd);
+					break;
+				}
+			case 0x1:	//Single Data Swap
+					if ((cmd & ARM_SDS_MASK) == ARM_SDS_SIGN)
+					{
+						ARM_SWAP(cmd);
+						CYCLES-=2*NCYCLE+ICYCLE;
+						break;
+					}
+			case 0x2:	//ALU
+			case 0x3:
+                    if((cmd&0x2000090)!=0x90)
+                    {
+							arm60_ALU(cmd);
+//					printf("%x\n",cmd);
+							  break;
+                    }
+
+			};
+
+		}	//condition
+
+
+
+            if(!ISF && _clio_NeedFIQ()/*gFIQ*/)
+			{
+
+					//Set_madam_FSM(FSM_SUSPENDED);
+					gFIQ=0;
+
+					SPSR[arm_mode_table[0x11]]=CPSR;
+					SETF(1);
+					SETI(1);
+					SETM(0x11);
+					load(14,REG_PC+4);
+					REG_PC=0x0000001c;//1c
+			}
+
+//	} // for(CYCLES)
+
+
+	return -CYCLES;
+}
+
+
+/*
 int _arm_Execute(void)
 {
    uint32_t op2,op1;
@@ -1506,21 +2061,6 @@ Undefine:
             case 0x9:
 
                bdt_core(cmd);
-               /*if(MAS_Access_Exept)
-                 {
-               //sprintf(str,"*PC: 0x%8.8X DataAbort!!!\n",REG_PC);
-               //CDebug::DPrint(str);
-               //!!Exeption!!
-
-               SPSR[arm_mode_table[0x17]]=CPSR;
-               SETI(1);
-               SETM(0x17);
-               load(14,REG_PC+4);
-               REG_PC=0x00000010;
-               CYCLES-=SCYCLE+NCYCLE;
-               MAS_Access_Exept=false;
-               break;
-               } */
 
 
                break;
@@ -1556,7 +2096,7 @@ Undefine:
 
       }	//condition
 
-      if(!ISF && _clio_NeedFIQ()/*gFIQ*/)
+      if(!ISF && _clio_NeedFIQ())
       {
 
          //Set_madam_FSM(FSM_SUSPENDED);
@@ -1575,7 +2115,7 @@ Undefine:
 
    return -CYCLES;
 }
-
+*/
 
 void _mem_write8(uint32_t addr, uint8_t val)
 {
@@ -1613,7 +2153,7 @@ uint32_t _mem_read32(uint32_t addr)
    return *((uint32_t*)&pRam[addr]);
 }
 
-uint8_t _mem_read8(uint32_t addr)
+INLINE uint8_t _mem_read8(uint32_t addr)
 {
    return pRam[addr];
 }

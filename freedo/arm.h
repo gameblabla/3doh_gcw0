@@ -29,6 +29,7 @@ Felix Lazarev
 #define ARM_3DO_HEADER
 
 #include <stdint.h>
+#include "retro_inline.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,7 +44,7 @@ uint8_t *_arm_Init(void);
 void _mem_write8(unsigned int addr, uint8_t val);
 void  _mem_write16(unsigned int addr, uint16_t val);
 void _mem_write32(unsigned int addr, unsigned int val);
-uint8_t  _mem_read8(unsigned int addr);
+INLINE uint8_t  _mem_read8(unsigned int addr);
 uint16_t _mem_read16(unsigned int addr);
 unsigned int  _mem_read32(unsigned int addr);
 

@@ -43,7 +43,6 @@ extern int unknownflag11;
 extern int speedfixes;
 extern int fixmode;
 
-#pragma pack(push,1)
 struct QDatum
 {
    uint32_t qrz_AccARM;
@@ -52,7 +51,6 @@ struct QDatum
    uint32_t qrz_TCount;
    uint32_t VDL_CLOCK, qrz_vdlline, VDL_HS,VDL_FS;
 };
-#pragma pack(pop)
 
 static struct QDatum quarz;
 

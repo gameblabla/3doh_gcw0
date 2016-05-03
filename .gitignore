@@ -1,6 +1,9 @@
 3doh
 ./3doh
 *.o
+*.7z
+*.out
+out.txt
 *.iso
 freedo/*.o
 sound/sdl/*.o

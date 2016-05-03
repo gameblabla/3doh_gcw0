@@ -34,7 +34,7 @@ char biosFile[128];
 char imageFile[128];
 char configFile[128];
 
-bool __temporalfixes;
+unsigned char __temporalfixes;
 int HightResMode;
 int __tex__scaler;
 

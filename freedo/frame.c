@@ -19,11 +19,7 @@ void _frame_Init(void)
 	}
 }
 
-void Get_Frame_Bitmap(
-	struct VDLFrame* sourceFrame,
-	void* destinationBitmap,
-	int copyWidth,
-	int copyHeight)
+void Get_Frame_Bitmap(struct VDLFrame* sourceFrame, void* destinationBitmap, int copyWidth, int copyHeight)
 {
    int i, pix;
    uint8_t *destPtr = (uint8_t*)destinationBitmap;
@@ -56,6 +52,11 @@ void Get_Frame_Bitmap(
 
          destPtr++;
          srcPtr++;
+         /*
+          16-bits displays...
+          destPtr--;
+		  srcPtr++;
+         */
       }
    }
 }

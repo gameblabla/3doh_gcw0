@@ -1,7 +1,7 @@
 CC = gcc
 TARGET = 3doh
-CFLAGS = -Ofast -Wall $(SDL_CFLAGS) -I./ -I./freedo -I./freedo/filters  $(shell sdl-config --cflags)
-LDFLAGS= -lSDL
+CFLAGS = -O0 -g -Wall $(SDL_CFLAGS) -I./ -I./freedo -I./freedo/filters  $(shell sdl-config --cflags)
+LDFLAGS= -lSDL -lm
 
 OBJS = freedo/arm.o \
 freedo/DiagPort.o\

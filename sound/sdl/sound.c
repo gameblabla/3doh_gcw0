@@ -21,7 +21,7 @@ void fill_audio(void *udata, Uint8 *stream, int len)
 	len = ( len > audio_len ? audio_len : len );
 
     /*protect against underruns*/
-	if((audio_read+len>=audio_pointer)&&(audio_read<audio_pointer))
+	if(SDL_GetAudioStatus() == SDL_AUDIO_PAUSED && (audio_read+len>=audio_pointer)&&(audio_read<audio_pointer))
 	{
 		SDL_PauseAudio(1);
 		audio_pointer=0;
