@@ -4,7 +4,9 @@
 *.7z
 *.out
 out.txt
+*.opk
 *.iso
+opk/3doh
 freedo/*.o
 sound/sdl/*.o
 video/sdl/*.o

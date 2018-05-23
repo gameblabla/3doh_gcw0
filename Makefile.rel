@@ -1,6 +1,6 @@
 CC = gcc
 TARGET = 3doh
-CFLAGS = -march=native -O2 -g -Wall -Wextra
+CFLAGS = -march=native -Ofast -march=native -mtune=native -s -Wall -Wextra
 CFLAGS += -Isrc -Isrc/freedo
 LDFLAGS= -lSDL -lm
 

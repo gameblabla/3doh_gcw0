@@ -1,10 +1,13 @@
-CC = gcc
+CC = mipsel-linux-gcc
 TARGET = 3doh
-CFLAGS = -march=native -O2 -g -Wall -Wextra
+CFLAGS  = -Ofast -mips32r2 -D__GCW__ -mplt -mno-shared \
+	  -fomit-frame-pointer  -fdata-sections -ffunction-sections \
+	  -Wall -Wextra
 CFLAGS += -Isrc -Isrc/freedo
-LDFLAGS= -lSDL -lm
+LDFLAGS = -lSDL -flto -Wl,--gc-sections -s
 
 OBJS = \
+	src/freedo/mips_dynarec.o \
 	src/freedo/arm.o \
 	src/freedo/DiagPort.o\
 	src/freedo/quarz.o\
@@ -28,8 +31,9 @@ OBJS = \
 
 all: $(TARGET)
 
-rm-elf:
-	-rm -f $(TARGET) $(OBJS)
+pack:
+	mv ./$(TARGET) ./opk/3doh
+	mksquashfs ./opk 3doh.opk -all-root -noappend -no-exports -no-xattrs
 
 $(TARGET): $(OBJS)
 	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
