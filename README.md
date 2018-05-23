@@ -7,9 +7,9 @@ However, he gave up working on it. I later took his emulator, completely switche
 
 Then i later let it gather dust... Dmitry however forked my code and finally fixed the audio code which was broken.
 
-He also was working on a MIPS recompiler for it, which i never sadly worked on... So you're stuck with the interpreter code for now
+He also was working on a MIPS recompiler for it, which i never sadly worked on... 
 
-which is somewhat decently fast on a reasonably fast device. (2 Ghz at least, it is not playable fullspeed at 1Ghz on an ARM or MIPS proc)
+So you're stuck with the interpreter code for now which is somewhat decently fast on a reasonably fast device. (2 Ghz at least, it is not playable fullspeed at 1Ghz on an ARM or MIPS proc)
 
 So yeah, it does not run fullspeed on the GCW0...
 
