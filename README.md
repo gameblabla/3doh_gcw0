@@ -3,9 +3,7 @@ Description
 
 3D'oh! is a 3DO emulator originally written by Guaripolo (gabriel@arcadenea.com.ar).
 
-However, he gave up working on it. I later took his emulator, completely switched it to C rather than C++, (for portability, size and speed reasons)
-
-and ported it to the GCW0 in the process.
+However, he gave up working on it. I later took his emulator, completely switched it to C rather than C++, (for portability, size and speed reasons) and ported it to the GCW0 in the process.
 
 Then i later let it gather dust... Dmitry however forked my code and finally fixed the audio code which was broken.
 
