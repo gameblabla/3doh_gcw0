@@ -5,6 +5,8 @@
 *.out
 out.txt
 *.opk
+*.gcda
+*.o
 *.iso
 opk/3doh
 freedo/*.o

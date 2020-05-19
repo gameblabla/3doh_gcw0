@@ -2,18 +2,14 @@
 #include "video.h"
 #include "frame.h"
 
-int screen_width = 0;
-int screen_height = 0;
-int screen_bpp = 0;
 SDL_Surface *screen;
 struct VDLFrame *frame;
 
-#ifdef __GCW__
-	#define flags SDL_HWSURFACE | SDL_TRIPLEBUF
+#ifdef SDL_TRIPLEBUF
+#define flags SDL_HWSURFACE | SDL_TRIPLEBUF
 #else
-	#define flags SDL_SWSURFACE
+#define flags SDL_HWSURFACE
 #endif
-
 
 int videoInit(void)
 {
@@ -25,7 +21,7 @@ int videoInit(void)
 	}
 
 	SDL_ShowCursor(0);
-	screen = SDL_SetVideoMode(320, 240, 32, flags);
+	screen = SDL_SetVideoMode(320, 240, 16, flags);
 
 	return 0;
 }

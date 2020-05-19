@@ -231,7 +231,9 @@ int initEmu()
 		quit = inputQuit();
 
 		/* Framerate control */
+		#ifndef SDL_TRIPLEBUF
 		synchronize_us();
+		#endif
 	}
 
 

@@ -37,6 +37,10 @@
 #define ALUSIZEMASK 0xFFFFFFFF
 #endif
 
+#ifndef INLINE
+#define INLINE inline
+#endif
+
 //////////////////////////////////////////////////////////////////////
 // Flag logic
 //////////////////////////////////////////////////////////////////////
@@ -50,8 +54,8 @@
 #define WAVELET (11025)
 
 uint16_t RegBase(unsigned int reg);
-INLINE uint16_t ireadh(unsigned int addr);
-INLINE void iwriteh(unsigned int addr, uint16_t val);
+static INLINE uint16_t ireadh(unsigned int addr);
+static INLINE void iwriteh(unsigned int addr, uint16_t val);
 void OperandLoader(int Requests);
 int  OperandLoaderNWB(void);
 
@@ -787,7 +791,7 @@ uint16_t  RegBase(unsigned int reg)
 	return ((reg & 7) | (twi << 8) | (reg >> 3) << 9);
 }
 
-INLINE uint16_t ireadh(unsigned int addr) //DSP IREAD (includes EI, I)
+static INLINE uint16_t ireadh(unsigned int addr) //DSP IREAD (includes EI, I)
 {
 	uint16_t val;
 

@@ -1,10 +1,20 @@
-CC = mipsel-linux-gcc
+CC = /opt/gcw0-toolchain-static/bin/mipsel-linux-gcc
 TARGET = 3doh
-CFLAGS  = -O2 -mips32r2 -g -D__GCW__ -DMIPSREC -mplt -mno-shared \
-	  -fomit-frame-pointer  -fdata-sections -ffunction-sections \
-	  -Wall -Wextra
+PROFILE = 0
+
+CFLAGS  = -Ofast -mips32r2 -flto -D__GCW__ -fomit-frame-pointer -mframe-header-opt -mno-fp-exceptions -mno-check-zero-division -mno-abicalls -fno-common -Wall -Wextra
 CFLAGS += -Isrc -Isrc/freedo
-LDFLAGS = -lSDL -flto -Wl,--gc-sections
+LDFLAGS =
+
+LDFLAGS += -nodefaultlibs -lc -lgcc -lgcov -lSDL -lasound -no-pie -Wl,--as-needed -flto -s
+
+ifeq ($(PROFILE), YES)
+CFLAGS += -fprofile-generate=/media/roms/3doh
+else ifeq ($(PROFILE), APPLY)
+CFLAGS		+= -fprofile-use
+LDFLAGS += -lgcov
+endif
+
 
 OBJS = \
         src/freedo/mips_dynarec.o \

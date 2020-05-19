@@ -12,8 +12,8 @@ void _frame_Init(void);
 void Get_Frame_Bitmap(
 	struct VDLFrame* sourceFrame,
 	void* destinationBitmap,
-	int copyWidth,
-	int copyHeight);
+	uint_fast32_t copyWidth,
+	uint_fast32_t copyHeight);
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,6 @@
-CC = gcc
+CC = clang
 TARGET = 3doh
-CFLAGS = -march=native -O2 -g -Wall -Wextra
+CFLAGS = -march=native -O0 -g3 -Weverything
 CFLAGS += -Isrc -Isrc/freedo
 LDFLAGS= -lSDL -lm
 
