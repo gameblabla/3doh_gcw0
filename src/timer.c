@@ -40,6 +40,27 @@ static void sleep_us(int value)
 	usleep(value);
 }
 
+unsigned int getFps()
+{
+	static long long start_timer = 0;
+	static long long now_timer;
+	static unsigned int frame_count = 0;
+	static unsigned int fps = 0;
+
+	if (!start_timer)
+		start_timer = get_ticks_us();
+
+	now_timer = get_ticks_us();
+	frame_count++;
+	if(now_timer - start_timer >= 1000000) {
+		start_timer = now_timer;
+		fps = frame_count;
+		frame_count = 0;
+	}
+
+	return fps;
+}
+
 void synchronize_us()
 {
 	long long now_us;

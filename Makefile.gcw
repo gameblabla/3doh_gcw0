@@ -37,6 +37,7 @@ OBJS = \
 	src/timer.o \
 	src/input.o \
 	src/config.o \
+	src/tinyfps.o \
 	src/main.o
 
 all: $(TARGET)
