@@ -487,6 +487,10 @@ unsigned int OFF;
 
 unsigned int pSource;
 
+bool celNeedsFramePixel = false;
+bool celNeedsPPROC = false;
+bool celNeedsPPROJ = false;
+
 //AString str;
 
 //CelEngine STATBits
@@ -1620,19 +1624,9 @@ void  DrawPackedCel_New(void)
 					eor = 1;
 					break;
 				case 1: //PACK_LITERAL
-					for (pix = 0; pix < pixcount; pix++) {
-						CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
-						if (!pproj.Transparent) {
-							unsigned framePixel = mreadh((PIXSOURCE + XY2OFF((xcur >> 16) << 2, ycur >> 16, RMOD)));
-							unsigned pixel      = PPROC(CURPIX, framePixel, LAMV);
-							pixel = PPROJ_OUTPUT(CURPIX, pixel, framePixel);
-							mwriteh((FBTARGET + XY2OFF((xcur >> 16) << 2, ycur >> 16, WMOD)), pixel);
-
-						}
-						xcur += HDX1616;
-						ycur += HDY1616;
-
-					}
+					TexelDraw_BitmapRow(CURPIX, LAMV, xcur, ycur, pixcount);
+					if (HDX1616) xcur += HDX1616 * (pixcount);
+					if (HDY1616) ycur += HDY1616 * (pixcount);
 
 					break;
 				case 2: //PACK_TRANSPARENT
@@ -1897,21 +1891,8 @@ void  DrawLiteralCel_New(void)
 			xvert += VDX1616;
 			yvert += VDY1616;
 
+			TexelDraw_BitmapRow(CURPIX, LAMV, xcur, ycur, SPRWI - TEXTURE_WI_START);
 
-			for (j = TEXTURE_WI_START; j < SPRWI; j++) {
-				CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
-
-				if (!pproj.Transparent) {
-					unsigned framePixel = mreadh((PIXSOURCE + XY2OFF((xcur >> 16) << 2, ycur >> 16, RMOD)));
-					unsigned pixel = PPROC(CURPIX, framePixel, LAMV);
-					pixel = PPROJ_OUTPUT(CURPIX, pixel, framePixel);
-					mwriteh((FBTARGET + XY2OFF((xcur >> 16) << 2, ycur >> 16, WMOD)), pixel);
-
-				}
-				xcur += HDX1616;
-				ycur += HDY1616;
-
-			}
 			PDATA += (offset + 2) << 2;
 
 		}
@@ -2431,6 +2412,26 @@ void Init_Arbitrary_Map(void)
 	TEXTURE_HI_START = 0;
 }
 
+void TexelDraw_BitmapRow(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int cnt)
+{
+	int i;
+	int xp = xcur >> 16;
+	int yp = ycur >> 16;
+	const int hdx = HDX1616 >> 16;
+	const int hdy = HDY1616 >> 16;
+	for (i = 0; i < cnt; i++) {
+		CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
+		if (!pproj.Transparent) {
+			unsigned framePixel = mreadh((PIXSOURCE + XY2OFF(xp << 2, yp, RMOD)));
+			unsigned pixel      = PPROC(CURPIX, framePixel, LAMV);
+			pixel = PPROJ_OUTPUT(CURPIX, pixel, framePixel);
+			mwriteh((FBTARGET + XY2OFF(xp << 2, yp, WMOD)), pixel);
+		}
+		xp += hdx;
+		yp += hdy;
+	}
+}
+
 int  TexelDraw_Line(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int cnt)
 {
 	int i = 0;
@@ -2500,7 +2501,7 @@ int  TexelDraw_Scale(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int del
 	return 0;
 }
 
-static INLINE int TexelCCWTestSmp(int hdx, int hdy, int vdx, int vdy)
+int TexelCCWTestSmp(int hdx, int hdy, int vdx, int vdy)
 {
 	if (((hdx + vdx) * (hdy - vdy) + vdx * vdy - hdx * hdy) < 0)
 		return CCB_ACCW;
