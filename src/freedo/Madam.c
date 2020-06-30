@@ -1546,7 +1546,6 @@ unsigned int * _madam_GetRegs(void)
 
 void  DrawPackedCel_New(void)
 {
-	int pix;
 	sf = 100000;
 	uint16_t CURPIX, LAMV;
 
@@ -1601,10 +1600,10 @@ void  DrawPackedCel_New(void)
 
 			while (!eor) {//while not end of row
 
-				type = BitReaderBig_Read(&bitoper, 2);
+				const int header = BitReaderBig_Read(&bitoper, 8);
+				type = (header >> 6) & 3;
 				if ( (int)(bitoper.point + start) >= (lastaddr)) type = 0;
-
-				pixcount = BitReaderBig_Read(&bitoper, 6) + 1;
+				pixcount = (header & 63) + 1;
 
 				if (scipw) {
 					if (type == 0) break;
@@ -1696,18 +1695,18 @@ void  DrawPackedCel_New(void)
 
 			while (!eor) {//while not end of row
 
-				type = BitReaderBig_Read(&bitoper, 2);
-				if ( (int)(bitoper.point + start) >= (lastaddr))
-					type = 0;
+				const int header = BitReaderBig_Read(&bitoper, 8);
+				type = (header >> 6) & 3;
+				if ( (int)(bitoper.point + start) >= (lastaddr)) type = 0;
+				pixcount = (header & 63) + 1;
 
-				int __pix = BitReaderBig_Read(&bitoper, 6) + 1;
 				switch (type) {
 				case 0: //end of row
 					eor = 1;
 					break;
 				case 1: //PACK_LITERAL
-					while (__pix) {
-						__pix--;
+					while (pixcount) {
+						pixcount--;
 						CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
 
 						if (!pproj.Transparent) {
@@ -1722,24 +1721,24 @@ void  DrawPackedCel_New(void)
 					break;
 				case 2: //PACK_TRANSPARENT
 					//	calcx+=(pixcount+1);
-					xcur += HDX1616 * (__pix);
-					ycur += HDY1616 * (__pix);
-					__pix = 0;
+					xcur += HDX1616 * (pixcount);
+					ycur += HDY1616 * (pixcount);
+					pixcount = 0;
 
 					break;
 				case 3: //PACK_REPEAT
 					CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
 					if (!pproj.Transparent) {
 
-						if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + (HDX1616 * (__pix)) + VDX1616) >> 16, (ycur + (HDY1616 * (__pix)) + drawHeight) >> 16)) break;
+						if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + (HDX1616 * (pixcount)) + VDX1616) >> 16, (ycur + (HDY1616 * (pixcount)) + drawHeight) >> 16)) break;
 
 					}
-					xcur += HDX1616 * (__pix);
-					ycur += HDY1616 * (__pix);
-					__pix = 0;
+					xcur += HDX1616 * (pixcount);
+					ycur += HDY1616 * (pixcount);
+					pixcount = 0;
 					break;
 				}       //type
-				if (__pix) break;
+				if (pixcount) break;
 			}               //eor
 
 
@@ -1776,10 +1775,10 @@ void  DrawPackedCel_New(void)
 
 			while (!eor) {//while not end of row
 
-				type = BitReaderBig_Read(&bitoper, 2);
+				const int header = BitReaderBig_Read(&bitoper, 8);
+				type = (header >> 6) & 3;
 				if ( (int)(bitoper.point + start) >= (lastaddr)) type = 0;
-
-				int __pix = BitReaderBig_Read(&bitoper, 6) + 1;
+				pixcount = (header & 63) + 1;
 
 				switch (type) {
 				case 0: //end of row
@@ -1787,9 +1786,9 @@ void  DrawPackedCel_New(void)
 					break;
 				case 1: //PACK_LITERAL
 
-					while (__pix) {
+					while (pixcount) {
 						CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
-						__pix--;
+						pixcount--;
 						//   if(speedfixes>=0&&speedfixes<=100001) speedfixes=300000;
 						if (!pproj.Transparent) {
 							if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
@@ -1805,19 +1804,19 @@ void  DrawPackedCel_New(void)
 				case 2: //PACK_TRANSPARENT
 					if (speedfixes >= 0 && sdf > 0 /*&&speedfixes<=100001*/) speedfixes = 300000;
 					//	calcx+=(pixcount+1);
-					xcur += hdx * (__pix);
-					ycur += hdy * (__pix);
-					xdown += HDX1616 * (__pix);
-					ydown += HDY1616 * (__pix);
-					__pix = 0;
+					xcur += hdx * (pixcount);
+					ycur += hdy * (pixcount);
+					xdown += HDX1616 * (pixcount);
+					ydown += HDY1616 * (pixcount);
+					pixcount = 0;
 
 					break;
 				case 3:                                                                                                                                                                 //PACK_REPEAT
 					CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
 					if (speedfixes >= 0 && speedfixes < 200001 && ((CURPIX > 10000 && CURPIX < 11000) && sdf == 0 /*||(CURPIX>10500&&CURPIX<10650)*/)) speedfixes = 200000;         //(CURPIX>10450&&CURPIX<10470)
 					if (!pproj.Transparent) {
-						while (__pix) {
-							__pix--;
+						while (pixcount) {
+							pixcount--;
 							if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
 								break;
 							xcur += hdx;
@@ -1826,18 +1825,18 @@ void  DrawPackedCel_New(void)
 							ydown += HDY1616;
 						}
 					} else {
-						xcur += hdx * __pix;
-						ycur += hdy * __pix;
-						xdown += HDX1616 * __pix;
-						ydown += HDY1616 * __pix;
-						__pix = 0;
+						xcur += hdx * pixcount;
+						ycur += hdy * pixcount;
+						xdown += HDX1616 * pixcount;
+						ydown += HDY1616 * pixcount;
+						pixcount = 0;
 					}
 					//pixcount=0;
 
 					break;
 				}
 				;//type
-				if (__pix) break;
+				if (pixcount) break;
 			}//eor
 
 			start = lastaddr;
@@ -1891,7 +1890,6 @@ void  DrawLiteralCel_New(void)
 		PDATA += ((offset + 2) << 2) * TEXTURE_HI_START;
 		if (SPRWI > TEXTURE_WI_LIM) SPRWI = TEXTURE_WI_LIM;
 		for (i = TEXTURE_HI_START; i < TEXTURE_HI_LIM; i++) {
-			int j;
 
 			BitReaderBig_AttachBuffer(&bitoper, PDATA);
 			BITCALC = ((offset + 2) << 2) << 5;
