@@ -1271,7 +1271,7 @@ unsigned int  PDEC(unsigned int pixel, uint16_t * amv)
 			resamv = 0x49;
 
 		} else {
-			// (Uncoded 16 bit CEL)
+			// (Coded 16 bit CEL)
 
 			pres = PLUT[pix1.c16b.c];
 			pres = (pres & 0x7fff) | (pixel & 0x8000);
@@ -2014,7 +2014,7 @@ void  DrawLRCel_New(void)
 {
 	sf = 100000;
 	int i, j, xcur = 0, ycur = 0, xvert, yvert, xdown, ydown, hdx, hdy;
-	uint16_t CURPIX, LAMV;
+	uint16_t CURPIX, LAMV = 0x49;
 
 
 	bpp = BPP[PRE0 & PRE0_BPP_MASK];
@@ -2048,8 +2048,8 @@ void  DrawLRCel_New(void)
 			const int hdx = HDX1616 >> 16;
 			const int hdy = HDY1616 >> 16;
 			for (j = TEXTURE_WI_START; j < SPRWI; j++, xp+=hdx, yp+=hdy) {
-				CURPIX = PDEC(mreadh((PDATA + XY2OFF(j << 2, i, offset << 2))), &LAMV);
-
+				CURPIX = mreadh((PDATA + XY2OFF(j << 2, i, offset << 2)));
+				pproj.Transparent = ( ((CURPIX & 0x7fff) == 0x0) & pdec.tmask );
 				if (!pproj.Transparent) {
 					pixel = CURPIX;
 					if (celNeedsFramePixel) framePixel = mreadh((PIXSOURCE + XY2OFF(xp << 2, yp, RMOD)));
@@ -2077,8 +2077,8 @@ void  DrawLRCel_New(void)
 
 			for (j = 0; j < SPRWI; j++) {
 
-				CURPIX = PDEC(mreadh((PDATA + XY2OFF(j << 2, i, offset << 2))), &LAMV);
-
+				CURPIX = mreadh((PDATA + XY2OFF(j << 2, i, offset << 2)));
+				pproj.Transparent = ( ((CURPIX & 0x7fff) == 0x0) & pdec.tmask );
 				if (!pproj.Transparent) {
 
 					if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + HDX1616 + VDX1616) >> 16, (ycur + HDY1616 + drawHeight) >> 16))
@@ -2111,8 +2111,8 @@ void  DrawLRCel_New(void)
 
 
 			for (j = 0; j < SPRWI; j++) {
-				CURPIX = PDEC(mreadh((PDATA + XY2OFF(j << 2, i, offset << 2))), &LAMV);
-
+				CURPIX = mreadh((PDATA + XY2OFF(j << 2, i, offset << 2)));
+				pproj.Transparent = ( ((CURPIX & 0x7fff) == 0x0) & pdec.tmask );
 				if (!pproj.Transparent) {
 					if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
 						break;
