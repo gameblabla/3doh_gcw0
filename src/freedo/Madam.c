@@ -376,7 +376,7 @@ uint32_t PXOR1, PXOR2;
 
 #define TESTCLIP(cx, cy) ( ((int)cx >= 0) && ((int)cx <= ((CLIPXVAL) << 16)) && ((int)cy >= 0) && ((int)cy <= ((CLIPYVAL) << 16)))
 
-#define FLT(a) ((float)(int)(a) / 65536.0)
+
 #define  XY2OFF(a, b, c)   (  (((int)b >> 1) * c /*bitmap width*/)   + (((int)(b) & 1) << 1) +    (a)    )
 
 
@@ -529,10 +529,6 @@ bool celNeedsPPROJ = false;
 #define ENGBLEN         mregs[0x5bc]
 #define PAL_EXP         (&mregs[0x5d0])
 
-int FLOAT1612(int a)
-{
-	return a << 4;
-}
 
 //////////////////////////////////////////////////////////////////////
 // Quick divide helper
@@ -671,27 +667,27 @@ void  _madam_Poke(unsigned int addr, unsigned int val)
 			return;
 
 			//Matrix engine macros
-#define M00  ((float)(signed int)mregs[0x600])
-#define M01  ((float)(signed int)mregs[0x604])
-#define M02  ((float)(signed int)mregs[0x608])
-#define M03  ((float)(signed int)mregs[0x60C])
-#define M10  ((float)(signed int)mregs[0x610])
-#define M11  ((float)(signed int)mregs[0x614])
-#define M12  ((float)(signed int)mregs[0x618])
-#define M13  ((float)(signed int)mregs[0x61C])
-#define M20  ((float)(signed int)mregs[0x620])
-#define M21  ((float)(signed int)mregs[0x624])
-#define M22  ((float)(signed int)mregs[0x628])
-#define M23  ((float)(signed int)mregs[0x62C])
-#define M30  ((float)(signed int)mregs[0x630])
-#define M31  ((float)(signed int)mregs[0x634])
-#define M32  ((float)(signed int)mregs[0x638])
-#define M33  ((float)(signed int)mregs[0x63C])
+#define M00  ((int64_t)(int32_t)mregs[0x600])
+#define M01  ((int64_t)(int32_t)mregs[0x604])
+#define M02  ((int64_t)(int32_t)mregs[0x608])
+#define M03  ((int64_t)(int32_t)mregs[0x60C])
+#define M10  ((int64_t)(int32_t)mregs[0x610])
+#define M11  ((int64_t)(int32_t)mregs[0x614])
+#define M12  ((int64_t)(int32_t)mregs[0x618])
+#define M13  ((int64_t)(int32_t)mregs[0x61C])
+#define M20  ((int64_t)(int32_t)mregs[0x620])
+#define M21  ((int64_t)(int32_t)mregs[0x624])
+#define M22  ((int64_t)(int32_t)mregs[0x628])
+#define M23  ((int64_t)(int32_t)mregs[0x62C])
+#define M30  ((int64_t)(int32_t)mregs[0x630])
+#define M31  ((int64_t)(int32_t)mregs[0x634])
+#define M32  ((int64_t)(int32_t)mregs[0x638])
+#define M33  ((int64_t)(int32_t)mregs[0x63C])
 
-#define  V0  ((float)(signed int)mregs[0x640])
-#define  V1  ((float)(signed int)mregs[0x644])
-#define  V2  ((float)(signed int)mregs[0x648])
-#define  V3  ((float)(signed int)mregs[0x64C])
+#define  V0  ((int64_t)(int32_t)mregs[0x640])
+#define  V1  ((int64_t)(int32_t)mregs[0x644])
+#define  V2  ((int64_t)(int32_t)mregs[0x648])
+#define  V3  ((int64_t)(int32_t)mregs[0x64C])
 
 #define Rez0 mregs[0x660]
 #define Rez1 mregs[0x664]
@@ -705,7 +701,7 @@ void  _madam_Poke(unsigned int addr, unsigned int val)
 
 			mregs[0x7fc] = 0; // Ours matrix engine already ready
 
-			static double Rez0T, Rez1T, Rez2T, Rez3T;
+			static int64_t Rez0T, Rez1T, Rez2T, Rez3T;
 
 			switch (val) { // Cmd
 			case 0: //printf("#Matrix = NOP\n");
@@ -724,10 +720,10 @@ void  _madam_Poke(unsigned int addr, unsigned int val)
 				Rez3 = Rez3T;
 
 
-				Rez0T = (int)((M00 * V0 + M01 * V1 + M02 * V2 + M03 * V3) / 65536.0);
-				Rez1T = (int)((M10 * V0 + M11 * V1 + M12 * V2 + M13 * V3) / 65536.0);
-				Rez2T = (int)((M20 * V0 + M21 * V1 + M22 * V2 + M23 * V3) / 65536.0);
-				Rez3T = (int)((M30 * V0 + M31 * V1 + M32 * V2 + M33 * V3) / 65536.0);
+				Rez0T = (int)((M00 * V0 + M01 * V1 + M02 * V2 + M03 * V3) >> 16);
+				Rez1T = (int)((M10 * V0 + M11 * V1 + M12 * V2 + M13 * V3) >> 16);
+				Rez2T = (int)((M20 * V0 + M21 * V1 + M22 * V2 + M23 * V3) >> 16);
+				Rez3T = (int)((M30 * V0 + M31 * V1 + M32 * V2 + M33 * V3) >> 16);
 
 				return;
 			case 2: //multiply a 3x3 matrix of 16.16 values by a vector of 16.16 values
@@ -736,9 +732,9 @@ void  _madam_Poke(unsigned int addr, unsigned int val)
 				Rez2 = Rez2T;
 				Rez3 = Rez3T;
 
-				Rez0T = (int)((M00 * V0 + M01 * V1 + M02 * V2) / 65536.0);
-				Rez1T = (int)((M10 * V0 + M11 * V1 + M12 * V2) / 65536.0);
-				Rez2T = (int)((M20 * V0 + M21 * V1 + M22 * V2) / 65536.0);
+				Rez0T = (int)((M00 * V0 + M01 * V1 + M02 * V2) >> 16);
+				Rez1T = (int)((M10 * V0 + M11 * V1 + M12 * V2) >> 16);
+				Rez2T = (int)((M20 * V0 + M21 * V1 + M22 * V2) >> 16);
 				//printf("#Matrix CMD2, R0=0x%8.8X, R1=0x%8.8X, R2=0x%8.8X\n",Rez0,Rez1,Rez2);
 				return;
 
@@ -751,18 +747,18 @@ void  _madam_Poke(unsigned int addr, unsigned int val)
 				Rez2 = Rez2T;
 				Rez3 = Rez3T;
 
-				double M = Nfrac16;
+				int64_t M = Nfrac16;
 
-				Rez2T = (signed int)((M20 * V0 + M21 * V1 + M22 * V2) / 65536.0);       // z
+				Rez2T = (signed int)((M20 * V0 + M21 * V1 + M22 * V2) >> 16);       // z
 				if (Rez2T != 0)
-					M /= (double)Rez2T;                                             // n/z
+					M /= (int64_t)Rez2T;                                             // n/z
 
-				Rez0T = (signed int)((M00 * V0 + M01 * V1 + M02 * V2) / 65536.0);
-				Rez1T = (signed int)((M10 * V0 + M11 * V1 + M12 * V2) / 65536.0);
+				Rez0T = (signed int)((M00 * V0 + M01 * V1 + M02 * V2) >> 16);
+				Rez1T = (signed int)((M10 * V0 + M11 * V1 + M12 * V2) >> 16);
 
 
-				Rez0T = (double)((Rez0T * M) / 65536.0 / 65536.0);      // x * n/z
-				Rez1T = (double)((Rez1T * M) / 65536.0 / 65536.0);      // y * n/z
+				Rez0T = (int64_t)((Rez0T * M) >> 32);      // x * n/z
+				Rez1T = (int64_t)((Rez1T * M) >> 32);      // y * n/z
 
 			}
 			break;
@@ -786,7 +782,7 @@ unsigned int OFFSET;
 unsigned int temp1;
 unsigned int Flag;
 
-double HDDX, HDDY, HDX, HDY, VDX, VDY, XPOS, YPOS, HDX_2, HDY_2;
+
 
 int HDDX1616, HDDY1616, HDX1616, HDY1616, VDX1616, VDY1616, XPOS1616, YPOS1616, HDX1616_2, HDY1616_2;
 unsigned int CEL_ORIGIN_VH_VALUE;
@@ -898,10 +894,8 @@ int _madam_HandleCEL(void)
 
 		if (CCBFLAGS & CCB_YOXY) {
 			XPOS1616 = mread(CURRENTCCB);
-			XPOS = XPOS1616 / 65536.0;
 			CURRENTCCB += 4;
 			YPOS1616 = mread(CURRENTCCB);
-			YPOS = YPOS1616 / 65536.0;
 			CURRENTCCB += 4;
 		}else
 			CURRENTCCB += 8;
@@ -919,24 +913,19 @@ int _madam_HandleCEL(void)
 			NEXTCCB = 0;
 		if (CCBFLAGS & CCB_LDSIZE) {
 			HDX1616 = ((int)mread(CURRENTCCB)) >> 4;
-			HDX = HDX1616 / 65536.0;
 			CURRENTCCB += 4;
 			HDY1616 = ((int)mread(CURRENTCCB)) >> 4;
-			HDY = HDY1616 / 65536.0;
+
 			CURRENTCCB += 4;
 			VDX1616 = mread(CURRENTCCB);
-			VDX = VDX1616 / 65536.0;
 			CURRENTCCB += 4;
 			VDY1616 = mread(CURRENTCCB);
-			VDY = VDY1616 / 65536.0;
 			CURRENTCCB += 4;
 		}
 		if (CCBFLAGS & CCB_LDPRS) {
 			HDDX1616 = ((int)mread(CURRENTCCB)) >> 4;
-			HDDX = HDDX1616 / 65536.0;
 			CURRENTCCB += 4;
 			HDDY1616 = ((int)mread(CURRENTCCB)) >> 4;
-			HDDY = HDDY1616 / 65536.0;
 			CURRENTCCB += 4;
 		}
 		if (CCBFLAGS & CCB_LDPPMP) {
@@ -1847,10 +1836,8 @@ void  DrawPackedCel_New(void)
 
 	if (fixmode & FIX_BIT_GRAPHICS_STEP_Y) {
 		YPOS1616 = ycur;
-		YPOS = YPOS1616 / 65536.0;
 	} else {
 		XPOS1616 = xcur;
-		XPOS = XPOS1616 / 65536.0;
 	}
 }
 
@@ -2001,10 +1988,8 @@ void  DrawLiteralCel_New(void)
 
 	if (fixmode & FIX_BIT_GRAPHICS_STEP_Y) {
 		YPOS1616 = ycur;
-		YPOS = YPOS1616 / 65536.0;
 	} else {
 		XPOS1616 = xcur;
-		XPOS = XPOS1616 / 65536.0;
 	}
 }
 
@@ -2131,10 +2116,8 @@ void  DrawLRCel_New(void)
 
 	if (fixmode & FIX_BIT_GRAPHICS_STEP_Y) {
 		YPOS1616 = ycur;
-		YPOS = YPOS1616 / 65536.0;
 	} else {
 		XPOS1616 = xcur;
-		XPOS = XPOS1616 / 65536.0;
 	}
 }
 
@@ -2168,26 +2151,26 @@ void _madam_SetMapping(unsigned int flag)
 
 #include <math.h>
 
-unsigned int TexelCCWTest(double hdx, double hdy, double vdx, double vdy)
+static INLINE unsigned int TexelCCWTest(int64_t hdx, int64_t hdy, int64_t vdx, int64_t vdy)
 {
-	if (((hdx + vdx) * (hdy - vdy) + vdx * vdy - hdx * hdy) < 0.0)
+	if (((hdx + vdx) * (hdy - vdy) + vdx * vdy - hdx * hdy) < 0)
 		return CCB_ACCW;
 	return CCB_ACW;
 }
 
-bool QuardCCWTest(int wdt)
+bool QuadCCWTest(int wdt)
 {
 	unsigned int tmp;
 
 	if (((CCBFLAGS & CCB_ACCW)) && ((CCBFLAGS & CCB_ACW)))
 		return false;
 
-	tmp = TexelCCWTest(HDX, HDY, VDX, VDY);
-	if (tmp != TexelCCWTest(HDX, HDY, VDX + (HDDX)*(float)wdt, VDY + (HDDY)*(float)wdt))
+	tmp = TexelCCWTest(HDX1616, HDY1616, VDX1616, VDY1616);
+	if (tmp != TexelCCWTest(HDX1616, HDY1616, VDX1616 + HDDX1616*wdt, VDY1616 + HDDY1616*wdt))
 		return false;
-	if (tmp != TexelCCWTest(HDX + (HDDX)*SPRHI, HDY + (HDDY)*SPRHI, VDX, VDY))
+	if (tmp != TexelCCWTest(HDX1616 + HDDX1616*SPRHI, HDY1616 + HDDY1616*SPRHI, VDX1616, VDY1616))
 		return false;
-	if (tmp != TexelCCWTest(HDX + (HDDX)*SPRHI, HDY + (HDDY)*SPRHI, VDX + (HDDX)*(float)SPRHI * (float)wdt, VDY + (HDDY)*(float)SPRHI * (float)wdt))
+	if (tmp != TexelCCWTest(HDX1616 + HDDX1616*SPRHI, HDY1616 + HDDY1616*SPRHI, VDX1616 + HDDX1616*SPRHI * wdt, VDY1616 + HDDY1616*SPRHI * wdt))
 		return false;
 	if (tmp == (CCBFLAGS & (CCB_ACCW | CCB_ACW)))
 		return true;
@@ -2293,7 +2276,7 @@ int TestInitVisual(int packed)
 		}
 	}
 
-	if (QuardCCWTest((!packed) ? SPRWI : 2048)) return -1;
+	if (QuadCCWTest((!packed) ? SPRWI : 2048)) return -1;
 	Init_Arbitrary_Map();
 
 
