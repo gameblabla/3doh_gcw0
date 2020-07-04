@@ -1130,15 +1130,15 @@ void exteraclocker(void)
 	}
 }
 
-static INLINE uint16_t readPIX(uint32_t src, int i, int j)
+static INLINE uint16_t readPIX(uint32_t src, int x, int y)
 {
-	src += XY2OFF((j << 2), i, WMOD);
+	src += XY2OFF((x << 2), y, WMOD);
 	return *((uint16_t*)&Mem[src ^ 2]);
 }
 
-static INLINE void writePIX(uint32_t src, int i, int j, uint16_t pix)
+static INLINE void writePIX(uint32_t src, int x, int y, uint16_t pix)
 {
-	src += XY2OFF((i << 2), j, WMOD);
+	src += XY2OFF((x << 2), y, WMOD);
 	*((uint16_t*)&Mem[src ^ 2]) = pix;
 }
 
@@ -2493,8 +2493,8 @@ int TexelCCWTestSmp(int hdx, int hdy, int vdx, int vdy)
 int  TexelDraw_Arbitrary(uint16_t CURPIX, uint16_t LAMV,
 			 int xA, int yA, int xB, int yB, int xC, int yC, int xD, int yD)
 {
-	int miny, maxy, i, xpoints[4], j, maxyt, maxxt, maxx;
-	int updowns[4], jtmp;
+	int miny, maxy, x, xpoints[4], y, maxyt, maxxt, maxx;
+	int updowns[4], ytmp;
 	unsigned int pixel = CURPIX;
 	unsigned int nextFramePixel = 0;
 	unsigned int currFramePixel = 0xffffffff;
@@ -2538,43 +2538,43 @@ int  TexelDraw_Arbitrary(uint16_t CURPIX, uint16_t LAMV,
 	if (maxy < yC) maxy = yC;
 	if (maxy < yD) maxy = yD;
 
-	i = (miny);
-	if (i < 0) i = 0;
+	y = (miny);
+	if (y < 0) y = 0;
 	if (maxy < maxyt) maxyt = maxy;
 
 
-	for (; i < maxyt; i++) {
+	for (; y < maxyt; y++) {
 		int cnt_cross = 0;
-		if (i < (yB) && i >= (yA)) {
-			xpoints[cnt_cross] = (int)((quickDivide(((xB - xA) * (i - yA)), (yB - yA)) + xA));
+		if (y < (yB) && y >= (yA)) {
+			xpoints[cnt_cross] = (int)((quickDivide(((xB - xA) * (y - yA)), (yB - yA)) + xA));
 			updowns[cnt_cross++] = 1;
-		} else if (i >= (yB) && i < (yA)) {
-			xpoints[cnt_cross] = (int)((quickDivide(((xA - xB) * (i - yB)), (yA - yB)) + xB));
+		} else if (y >= (yB) && y < (yA)) {
+			xpoints[cnt_cross] = (int)((quickDivide(((xA - xB) * (y - yB)), (yA - yB)) + xB));
 			updowns[cnt_cross++] = 0;
 		}
 
-		if (i < (yC) && i >= (yB)) {
-			xpoints[cnt_cross] = (int)((quickDivide(((xC - xB) * (i - yB)), (yC - yB)) + xB));
+		if (y < (yC) && y >= (yB)) {
+			xpoints[cnt_cross] = (int)((quickDivide(((xC - xB) * (y - yB)), (yC - yB)) + xB));
 			updowns[cnt_cross++] = 1;
-		} else if (i >= (yC) && i < (yB)) {
-			xpoints[cnt_cross] = (int)((quickDivide(((xB - xC) * (i - yC)), (yB - yC)) + xC));
+		} else if (y >= (yC) && y < (yB)) {
+			xpoints[cnt_cross] = (int)((quickDivide(((xB - xC) * (y - yC)), (yB - yC)) + xC));
 			updowns[cnt_cross++] = 0;
 		}
 
-		if (i < (yD) && i >= (yC)) {
-			xpoints[cnt_cross] = (int)((quickDivide(((xD - xC) * (i - yC)), (yD - yC)) + xC));
+		if (y < (yD) && y >= (yC)) {
+			xpoints[cnt_cross] = (int)((quickDivide(((xD - xC) * (y - yC)), (yD - yC)) + xC));
 			updowns[cnt_cross++] = 1;
-		} else if (i >= (yD) && i < (yC)) {
-			xpoints[cnt_cross] = (int)((quickDivide(((xC - xD) * (i - yD)), (yC - yD)) + xD));
+		} else if (y >= (yD) && y < (yC)) {
+			xpoints[cnt_cross] = (int)((quickDivide(((xC - xD) * (y - yD)), (yC - yD)) + xD));
 			updowns[cnt_cross++] = 0;
 		}
 
 		if (cnt_cross & 1) {
-			if (i < (yA) && i >= (yD)) {
-				xpoints[cnt_cross] = (int)((quickDivide(((xA - xD) * (i - yD)), (yA - yD)) + xD));
+			if (y < (yA) && y >= (yD)) {
+				xpoints[cnt_cross] = (int)((quickDivide(((xA - xD) * (y - yD)), (yA - yD)) + xD));
 				updowns[cnt_cross] = 1;
-			} else if (i >= (yA) && i < (yD)) {
-				xpoints[cnt_cross] = (int)((quickDivide(((xD - xA) * (i - yA)), (yD - yA)) + xA));
+			} else if (y >= (yA) && y < (yD)) {
+				xpoints[cnt_cross] = (int)((quickDivide(((xD - xA) * (y - yA)), (yD - yA)) + xA));
 				updowns[cnt_cross] = 0;
 			}
 		}
@@ -2586,25 +2586,25 @@ int  TexelDraw_Arbitrary(uint16_t CURPIX, uint16_t LAMV,
 				xpoints[0] = xpoints[1] - xpoints[0];
 				xpoints[1] = xpoints[1] - xpoints[0];
 
-				jtmp = updowns[0];
+				ytmp = updowns[0];
 				updowns[0] = updowns[1];
-				updowns[1] = jtmp;
+				updowns[1] = ytmp;
 			}
 			if (cnt_cross > 2) {
 				if ( ((CCBFLAGS & CCB_ACW) && updowns[2] == 0) ||
 				     ((CCBFLAGS & CCB_ACCW) && updowns[2] == 1)) {
-					j = xpoints[2];
-					if (j < 0) j = 0;
+					x = xpoints[2];
+					if (x < 0) x = 0;
 					maxx = xpoints[3];
 					if (maxx > maxxt) maxx = maxxt;
-					for (; j < maxx; j++) {
-						if (celNeedsFramePixel) nextFramePixel = readPIX(PIXSOURCE, i, j);
+					for (; x < maxx; x++) {
+						if (celNeedsFramePixel) nextFramePixel = readPIX(PIXSOURCE, x, y);
 						if (nextFramePixel != currFramePixel) {
 							currFramePixel = nextFramePixel;
 							if (celNeedsPPROC) pixel = PPROC(CURPIX, nextFramePixel, LAMV);
 							if (celNeedsPPROJ) pixel = PPROJ_OUTPUT(CURPIX, pixel, nextFramePixel);
 						}
-						writePIX(FBTARGET, j, i, pixel);
+						writePIX(FBTARGET, x, y, pixel);
 					}
 				}
 
@@ -2612,25 +2612,22 @@ int  TexelDraw_Arbitrary(uint16_t CURPIX, uint16_t LAMV,
 
 			if ( ((CCBFLAGS & CCB_ACW) && updowns[0] == 0) ||
 			     ((CCBFLAGS & CCB_ACCW) && updowns[0] == 1)) {
-				j = xpoints[0];
-				if (j < 0) j = 0;
+				x = xpoints[0];
+				if (x < 0) x = 0;
 				maxx = xpoints[1];
 				if (maxx > maxxt) maxx = maxxt;
 
-				for (; j < maxx; j++) {
-					if (celNeedsFramePixel) nextFramePixel = readPIX(PIXSOURCE, i, j);
+				for (; x < maxx; x++) {
+					if (celNeedsFramePixel) nextFramePixel = readPIX(PIXSOURCE, x, y);
 					if (nextFramePixel != currFramePixel) {
 						currFramePixel = nextFramePixel;
 						if (celNeedsPPROC) pixel = PPROC(CURPIX, nextFramePixel, LAMV);
 						if (celNeedsPPROJ) pixel = PPROJ_OUTPUT(CURPIX, pixel, nextFramePixel);
 					}
-					writePIX(FBTARGET, j, i, pixel);
+					writePIX(FBTARGET, x, y, pixel);
 				}
 			}
-
 		}
-
 	}
-
 	return 0;
 }
