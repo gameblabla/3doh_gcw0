@@ -374,10 +374,10 @@ uint32_t PXOR1, PXOR2;
 #define MIN(x, y) (x) + (((signed int)((y) - (x)) >> 31 & ((y) - (x))))
 #define MAX(x, y) (y) - (((signed int)((y) - (x)) >> 31 & ((y) - (x))))
 
-#define TESTCLIP(cx, cy) ( ((int)cx >= 0) && ((int)cx <= ((CLIPXVAL) << 16)) && ((int)cy >= 0) && ((int)cy <= ((CLIPYVAL) << 16)))
+#define TESTCLIP(cx, cy) ( ((cx) >= 0) && ((cx) <= CLIPXVAL) && ((cy) >= 0) && ((cy) <= CLIPYVAL) )
 
-#define FLT(a) ((float)(int)(a) / 65536.0)
-#define  XY2OFF(a, b, c)   (  (((int)b >> 1) * c /*bitmap width*/)   + (((int)(b) & 1) << 1) +    (a)    )
+
+#define  XY2OFF(a, b, c)   (  (((b) >> 1) * (c) /*bitmap width*/)   + (((int)(b) & 1) << 1) +    (a)    )
 
 
 #define PBMASK 0x80000000
@@ -410,7 +410,8 @@ int TestInitVisual(int packed);
 int Init_Line_Map(void);
 void Init_Scale_Map(void);
 void Init_Arbitrary_Map(void);
-int  TexelDraw_Line(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int cnt);
+void TexelDraw_BitmapRow(uint16_t LAMV, int xcur, int ycur, int cnt);
+void TexelDraw_Line(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int cnt);
 int  TexelDraw_Scale(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int deltax, int deltay);
 int  TexelDraw_Arbitrary(uint16_t CURPIX, uint16_t LAMV, int xA, int yA, int xB, int yB, int xC, int yC, int xD, int yD);
 void  DrawPackedCel_New(void);
@@ -487,6 +488,10 @@ unsigned int OFF;
 
 unsigned int pSource;
 
+bool celNeedsFramePixel = false;
+bool celNeedsPPROC = false;
+bool celNeedsPPROJ = false;
+
 //AString str;
 
 //CelEngine STATBits
@@ -524,10 +529,6 @@ unsigned int pSource;
 #define ENGBLEN         mregs[0x5bc]
 #define PAL_EXP         (&mregs[0x5d0])
 
-int FLOAT1612(int a)
-{
-	return a << 4;
-}
 
 //////////////////////////////////////////////////////////////////////
 // Quick divide helper
@@ -666,27 +667,27 @@ void  _madam_Poke(unsigned int addr, unsigned int val)
 			return;
 
 			//Matrix engine macros
-#define M00  ((float)(signed int)mregs[0x600])
-#define M01  ((float)(signed int)mregs[0x604])
-#define M02  ((float)(signed int)mregs[0x608])
-#define M03  ((float)(signed int)mregs[0x60C])
-#define M10  ((float)(signed int)mregs[0x610])
-#define M11  ((float)(signed int)mregs[0x614])
-#define M12  ((float)(signed int)mregs[0x618])
-#define M13  ((float)(signed int)mregs[0x61C])
-#define M20  ((float)(signed int)mregs[0x620])
-#define M21  ((float)(signed int)mregs[0x624])
-#define M22  ((float)(signed int)mregs[0x628])
-#define M23  ((float)(signed int)mregs[0x62C])
-#define M30  ((float)(signed int)mregs[0x630])
-#define M31  ((float)(signed int)mregs[0x634])
-#define M32  ((float)(signed int)mregs[0x638])
-#define M33  ((float)(signed int)mregs[0x63C])
+#define M00  ((int64_t)(int32_t)mregs[0x600])
+#define M01  ((int64_t)(int32_t)mregs[0x604])
+#define M02  ((int64_t)(int32_t)mregs[0x608])
+#define M03  ((int64_t)(int32_t)mregs[0x60C])
+#define M10  ((int64_t)(int32_t)mregs[0x610])
+#define M11  ((int64_t)(int32_t)mregs[0x614])
+#define M12  ((int64_t)(int32_t)mregs[0x618])
+#define M13  ((int64_t)(int32_t)mregs[0x61C])
+#define M20  ((int64_t)(int32_t)mregs[0x620])
+#define M21  ((int64_t)(int32_t)mregs[0x624])
+#define M22  ((int64_t)(int32_t)mregs[0x628])
+#define M23  ((int64_t)(int32_t)mregs[0x62C])
+#define M30  ((int64_t)(int32_t)mregs[0x630])
+#define M31  ((int64_t)(int32_t)mregs[0x634])
+#define M32  ((int64_t)(int32_t)mregs[0x638])
+#define M33  ((int64_t)(int32_t)mregs[0x63C])
 
-#define  V0  ((float)(signed int)mregs[0x640])
-#define  V1  ((float)(signed int)mregs[0x644])
-#define  V2  ((float)(signed int)mregs[0x648])
-#define  V3  ((float)(signed int)mregs[0x64C])
+#define  V0  ((int64_t)(int32_t)mregs[0x640])
+#define  V1  ((int64_t)(int32_t)mregs[0x644])
+#define  V2  ((int64_t)(int32_t)mregs[0x648])
+#define  V3  ((int64_t)(int32_t)mregs[0x64C])
 
 #define Rez0 mregs[0x660]
 #define Rez1 mregs[0x664]
@@ -700,7 +701,7 @@ void  _madam_Poke(unsigned int addr, unsigned int val)
 
 			mregs[0x7fc] = 0; // Ours matrix engine already ready
 
-			static double Rez0T, Rez1T, Rez2T, Rez3T;
+			static int64_t Rez0T, Rez1T, Rez2T, Rez3T;
 
 			switch (val) { // Cmd
 			case 0: //printf("#Matrix = NOP\n");
@@ -719,10 +720,10 @@ void  _madam_Poke(unsigned int addr, unsigned int val)
 				Rez3 = Rez3T;
 
 
-				Rez0T = (int)((M00 * V0 + M01 * V1 + M02 * V2 + M03 * V3) / 65536.0);
-				Rez1T = (int)((M10 * V0 + M11 * V1 + M12 * V2 + M13 * V3) / 65536.0);
-				Rez2T = (int)((M20 * V0 + M21 * V1 + M22 * V2 + M23 * V3) / 65536.0);
-				Rez3T = (int)((M30 * V0 + M31 * V1 + M32 * V2 + M33 * V3) / 65536.0);
+				Rez0T = (int)((M00 * V0 + M01 * V1 + M02 * V2 + M03 * V3) >> 16);
+				Rez1T = (int)((M10 * V0 + M11 * V1 + M12 * V2 + M13 * V3) >> 16);
+				Rez2T = (int)((M20 * V0 + M21 * V1 + M22 * V2 + M23 * V3) >> 16);
+				Rez3T = (int)((M30 * V0 + M31 * V1 + M32 * V2 + M33 * V3) >> 16);
 
 				return;
 			case 2: //multiply a 3x3 matrix of 16.16 values by a vector of 16.16 values
@@ -731,9 +732,9 @@ void  _madam_Poke(unsigned int addr, unsigned int val)
 				Rez2 = Rez2T;
 				Rez3 = Rez3T;
 
-				Rez0T = (int)((M00 * V0 + M01 * V1 + M02 * V2) / 65536.0);
-				Rez1T = (int)((M10 * V0 + M11 * V1 + M12 * V2) / 65536.0);
-				Rez2T = (int)((M20 * V0 + M21 * V1 + M22 * V2) / 65536.0);
+				Rez0T = (int)((M00 * V0 + M01 * V1 + M02 * V2) >> 16);
+				Rez1T = (int)((M10 * V0 + M11 * V1 + M12 * V2) >> 16);
+				Rez2T = (int)((M20 * V0 + M21 * V1 + M22 * V2) >> 16);
 				//printf("#Matrix CMD2, R0=0x%8.8X, R1=0x%8.8X, R2=0x%8.8X\n",Rez0,Rez1,Rez2);
 				return;
 
@@ -746,18 +747,18 @@ void  _madam_Poke(unsigned int addr, unsigned int val)
 				Rez2 = Rez2T;
 				Rez3 = Rez3T;
 
-				double M = Nfrac16;
+				int64_t M = Nfrac16;
 
-				Rez2T = (signed int)((M20 * V0 + M21 * V1 + M22 * V2) / 65536.0);       // z
+				Rez2T = (signed int)((M20 * V0 + M21 * V1 + M22 * V2) >> 16);       // z
 				if (Rez2T != 0)
-					M /= (double)Rez2T;                                             // n/z
+					M /= (int64_t)Rez2T;                                             // n/z
 
-				Rez0T = (signed int)((M00 * V0 + M01 * V1 + M02 * V2) / 65536.0);
-				Rez1T = (signed int)((M10 * V0 + M11 * V1 + M12 * V2) / 65536.0);
+				Rez0T = (signed int)((M00 * V0 + M01 * V1 + M02 * V2) >> 16);
+				Rez1T = (signed int)((M10 * V0 + M11 * V1 + M12 * V2) >> 16);
 
 
-				Rez0T = (double)((Rez0T * M) / 65536.0 / 65536.0);      // x * n/z
-				Rez1T = (double)((Rez1T * M) / 65536.0 / 65536.0);      // y * n/z
+				Rez0T = (int64_t)((Rez0T * M) >> 32);      // x * n/z
+				Rez1T = (int64_t)((Rez1T * M) >> 32);      // y * n/z
 
 			}
 			break;
@@ -781,7 +782,7 @@ unsigned int OFFSET;
 unsigned int temp1;
 unsigned int Flag;
 
-double HDDX, HDDY, HDX, HDY, VDX, VDY, XPOS, YPOS, HDX_2, HDY_2;
+
 
 int HDDX1616, HDDY1616, HDX1616, HDY1616, VDX1616, VDY1616, XPOS1616, YPOS1616, HDX1616_2, HDY1616_2;
 unsigned int CEL_ORIGIN_VH_VALUE;
@@ -893,10 +894,8 @@ int _madam_HandleCEL(void)
 
 		if (CCBFLAGS & CCB_YOXY) {
 			XPOS1616 = mread(CURRENTCCB);
-			XPOS = XPOS1616 / 65536.0;
 			CURRENTCCB += 4;
 			YPOS1616 = mread(CURRENTCCB);
-			YPOS = YPOS1616 / 65536.0;
 			CURRENTCCB += 4;
 		}else
 			CURRENTCCB += 8;
@@ -914,24 +913,19 @@ int _madam_HandleCEL(void)
 			NEXTCCB = 0;
 		if (CCBFLAGS & CCB_LDSIZE) {
 			HDX1616 = ((int)mread(CURRENTCCB)) >> 4;
-			HDX = HDX1616 / 65536.0;
 			CURRENTCCB += 4;
 			HDY1616 = ((int)mread(CURRENTCCB)) >> 4;
-			HDY = HDY1616 / 65536.0;
+
 			CURRENTCCB += 4;
 			VDX1616 = mread(CURRENTCCB);
-			VDX = VDX1616 / 65536.0;
 			CURRENTCCB += 4;
 			VDY1616 = mread(CURRENTCCB);
-			VDY = VDY1616 / 65536.0;
 			CURRENTCCB += 4;
 		}
 		if (CCBFLAGS & CCB_LDPRS) {
 			HDDX1616 = ((int)mread(CURRENTCCB)) >> 4;
-			HDDX = HDDX1616 / 65536.0;
 			CURRENTCCB += 4;
 			HDDY1616 = ((int)mread(CURRENTCCB)) >> 4;
-			HDDY = HDDY1616 / 65536.0;
 			CURRENTCCB += 4;
 		}
 		if (CCBFLAGS & CCB_LDPPMP) {
@@ -1136,6 +1130,36 @@ void exteraclocker(void)
 	}
 }
 
+static INLINE uint16_t readPixelLR(uint32_t src, int x, int y, int offset)
+{
+	src += XY2OFF((x << 2), y, offset);
+	#ifdef MSB_FIRST
+		return *((uint16_t*)&Mem[src]);
+	#else
+		return *((uint16_t*)&Mem[src ^ 2]);
+	#endif
+}
+
+static INLINE uint16_t readFramebufferPixel(uint32_t src, int x, int y)
+{
+	src += XY2OFF((x << 2), y, RMOD);
+	#ifdef MSB_FIRST
+		return *((uint16_t*)&Mem[src]);
+	#else
+		return *((uint16_t*)&Mem[src ^ 2]);
+	#endif
+}
+
+static INLINE void writeFramebufferPixel(uint32_t src, int x, int y, uint16_t pix)
+{
+	src += XY2OFF((x << 2), y, WMOD);
+	#ifdef MSB_FIRST
+		*((uint16_t*)&Mem[src]) = pix;
+	#else
+		*((uint16_t*)&Mem[src ^ 2]) = pix;
+	#endif
+}
+
 unsigned int  mread(unsigned int addr)
 {
 	unsigned int val;
@@ -1254,7 +1278,7 @@ unsigned int  PDEC(unsigned int pixel, uint16_t * amv)
 			resamv = 0x49;
 
 		} else {
-			// (Uncoded 16 bit CEL)
+			// (Coded 16 bit CEL)
 
 			pres = PLUT[pix1.c16b.c];
 			pres = (pres & 0x7fff) | (pixel & 0x8000);
@@ -1529,7 +1553,6 @@ unsigned int * _madam_GetRegs(void)
 
 void  DrawPackedCel_New(void)
 {
-	int pix;
 	sf = 100000;
 	uint16_t CURPIX, LAMV;
 
@@ -1584,10 +1607,10 @@ void  DrawPackedCel_New(void)
 
 			while (!eor) {//while not end of row
 
-				type = BitReaderBig_Read(&bitoper, 2);
+				const int header = BitReaderBig_Read(&bitoper, 8);
+				type = (header >> 6) & 3;
 				if ( (int)(bitoper.point + start) >= (lastaddr)) type = 0;
-
-				pixcount = BitReaderBig_Read(&bitoper, 6) + 1;
+				pixcount = (header & 63) + 1;
 
 				if (scipw) {
 					if (type == 0) break;
@@ -1620,19 +1643,9 @@ void  DrawPackedCel_New(void)
 					eor = 1;
 					break;
 				case 1: //PACK_LITERAL
-					for (pix = 0; pix < pixcount; pix++) {
-						CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
-						if (!pproj.Transparent) {
-							unsigned framePixel = mreadh((PIXSOURCE + XY2OFF((xcur >> 16) << 2, ycur >> 16, RMOD)));
-							unsigned pixel      = PPROC(CURPIX, framePixel, LAMV);
-							pixel = PPROJ_OUTPUT(CURPIX, pixel, framePixel);
-							mwriteh((FBTARGET + XY2OFF((xcur >> 16) << 2, ycur >> 16, WMOD)), pixel);
-
-						}
-						xcur += HDX1616;
-						ycur += HDY1616;
-
-					}
+					TexelDraw_BitmapRow(LAMV, xcur, ycur, pixcount);
+					if (HDX1616) xcur += HDX1616 * (pixcount);
+					if (HDY1616) ycur += HDY1616 * (pixcount);
 
 					break;
 				case 2: //PACK_TRANSPARENT
@@ -1689,18 +1702,18 @@ void  DrawPackedCel_New(void)
 
 			while (!eor) {//while not end of row
 
-				type = BitReaderBig_Read(&bitoper, 2);
-				if ( (int)(bitoper.point + start) >= (lastaddr))
-					type = 0;
+				const int header = BitReaderBig_Read(&bitoper, 8);
+				type = (header >> 6) & 3;
+				if ( (int)(bitoper.point + start) >= (lastaddr)) type = 0;
+				pixcount = (header & 63) + 1;
 
-				int __pix = BitReaderBig_Read(&bitoper, 6) + 1;
 				switch (type) {
 				case 0: //end of row
 					eor = 1;
 					break;
 				case 1: //PACK_LITERAL
-					while (__pix) {
-						__pix--;
+					while (pixcount) {
+						pixcount--;
 						CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
 
 						if (!pproj.Transparent) {
@@ -1715,24 +1728,24 @@ void  DrawPackedCel_New(void)
 					break;
 				case 2: //PACK_TRANSPARENT
 					//	calcx+=(pixcount+1);
-					xcur += HDX1616 * (__pix);
-					ycur += HDY1616 * (__pix);
-					__pix = 0;
+					xcur += HDX1616 * (pixcount);
+					ycur += HDY1616 * (pixcount);
+					pixcount = 0;
 
 					break;
 				case 3: //PACK_REPEAT
 					CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
 					if (!pproj.Transparent) {
 
-						if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + (HDX1616 * (__pix)) + VDX1616) >> 16, (ycur + (HDY1616 * (__pix)) + drawHeight) >> 16)) break;
+						if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + (HDX1616 * (pixcount)) + VDX1616) >> 16, (ycur + (HDY1616 * (pixcount)) + drawHeight) >> 16)) break;
 
 					}
-					xcur += HDX1616 * (__pix);
-					ycur += HDY1616 * (__pix);
-					__pix = 0;
+					xcur += HDX1616 * (pixcount);
+					ycur += HDY1616 * (pixcount);
+					pixcount = 0;
 					break;
 				}       //type
-				if (__pix) break;
+				if (pixcount) break;
 			}               //eor
 
 
@@ -1769,10 +1782,10 @@ void  DrawPackedCel_New(void)
 
 			while (!eor) {//while not end of row
 
-				type = BitReaderBig_Read(&bitoper, 2);
+				const int header = BitReaderBig_Read(&bitoper, 8);
+				type = (header >> 6) & 3;
 				if ( (int)(bitoper.point + start) >= (lastaddr)) type = 0;
-
-				int __pix = BitReaderBig_Read(&bitoper, 6) + 1;
+				pixcount = (header & 63) + 1;
 
 				switch (type) {
 				case 0: //end of row
@@ -1780,9 +1793,9 @@ void  DrawPackedCel_New(void)
 					break;
 				case 1: //PACK_LITERAL
 
-					while (__pix) {
+					while (pixcount) {
 						CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
-						__pix--;
+						pixcount--;
 						//   if(speedfixes>=0&&speedfixes<=100001) speedfixes=300000;
 						if (!pproj.Transparent) {
 							if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
@@ -1798,19 +1811,19 @@ void  DrawPackedCel_New(void)
 				case 2: //PACK_TRANSPARENT
 					if (speedfixes >= 0 && sdf > 0 /*&&speedfixes<=100001*/) speedfixes = 300000;
 					//	calcx+=(pixcount+1);
-					xcur += hdx * (__pix);
-					ycur += hdy * (__pix);
-					xdown += HDX1616 * (__pix);
-					ydown += HDY1616 * (__pix);
-					__pix = 0;
+					xcur += hdx * (pixcount);
+					ycur += hdy * (pixcount);
+					xdown += HDX1616 * (pixcount);
+					ydown += HDY1616 * (pixcount);
+					pixcount = 0;
 
 					break;
 				case 3:                                                                                                                                                                 //PACK_REPEAT
 					CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
 					if (speedfixes >= 0 && speedfixes < 200001 && ((CURPIX > 10000 && CURPIX < 11000) && sdf == 0 /*||(CURPIX>10500&&CURPIX<10650)*/)) speedfixes = 200000;         //(CURPIX>10450&&CURPIX<10470)
 					if (!pproj.Transparent) {
-						while (__pix) {
-							__pix--;
+						while (pixcount) {
+							pixcount--;
 							if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
 								break;
 							xcur += hdx;
@@ -1819,18 +1832,18 @@ void  DrawPackedCel_New(void)
 							ydown += HDY1616;
 						}
 					} else {
-						xcur += hdx * __pix;
-						ycur += hdy * __pix;
-						xdown += HDX1616 * __pix;
-						ydown += HDY1616 * __pix;
-						__pix = 0;
+						xcur += hdx * pixcount;
+						ycur += hdy * pixcount;
+						xdown += HDX1616 * pixcount;
+						ydown += HDY1616 * pixcount;
+						pixcount = 0;
 					}
 					//pixcount=0;
 
 					break;
 				}
 				;//type
-				if (__pix) break;
+				if (pixcount) break;
 			}//eor
 
 			start = lastaddr;
@@ -1841,10 +1854,8 @@ void  DrawPackedCel_New(void)
 
 	if (fixmode & FIX_BIT_GRAPHICS_STEP_Y) {
 		YPOS1616 = ycur;
-		YPOS = YPOS1616 / 65536.0;
 	} else {
 		XPOS1616 = xcur;
-		XPOS = XPOS1616 / 65536.0;
 	}
 }
 
@@ -1884,7 +1895,6 @@ void  DrawLiteralCel_New(void)
 		PDATA += ((offset + 2) << 2) * TEXTURE_HI_START;
 		if (SPRWI > TEXTURE_WI_LIM) SPRWI = TEXTURE_WI_LIM;
 		for (i = TEXTURE_HI_START; i < TEXTURE_HI_LIM; i++) {
-			int j;
 
 			BitReaderBig_AttachBuffer(&bitoper, PDATA);
 			BITCALC = ((offset + 2) << 2) << 5;
@@ -1897,21 +1907,8 @@ void  DrawLiteralCel_New(void)
 			xvert += VDX1616;
 			yvert += VDY1616;
 
+			TexelDraw_BitmapRow(LAMV, xcur, ycur, SPRWI - TEXTURE_WI_START);
 
-			for (j = TEXTURE_WI_START; j < SPRWI; j++) {
-				CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
-
-				if (!pproj.Transparent) {
-					unsigned framePixel = mreadh((PIXSOURCE + XY2OFF((xcur >> 16) << 2, ycur >> 16, RMOD)));
-					unsigned pixel = PPROC(CURPIX, framePixel, LAMV);
-					pixel = PPROJ_OUTPUT(CURPIX, pixel, framePixel);
-					mwriteh((FBTARGET + XY2OFF((xcur >> 16) << 2, ycur >> 16, WMOD)), pixel);
-
-				}
-				xcur += HDX1616;
-				ycur += HDY1616;
-
-			}
 			PDATA += (offset + 2) << 2;
 
 		}
@@ -2009,18 +2006,16 @@ void  DrawLiteralCel_New(void)
 
 	if (fixmode & FIX_BIT_GRAPHICS_STEP_Y) {
 		YPOS1616 = ycur;
-		YPOS = YPOS1616 / 65536.0;
 	} else {
 		XPOS1616 = xcur;
-		XPOS = XPOS1616 / 65536.0;
 	}
 }
 
 void  DrawLRCel_New(void)
 {
 	sf = 100000;
-	int i, j, xcur = 0, ycur = 0, xvert, yvert, xdown, ydown, hdx, hdy;
-	uint16_t CURPIX, LAMV;
+	int x, y, xcur = 0, ycur = 0, xvert, yvert, xdown, ydown, hdx, hdy;
+	uint16_t CURPIX, LAMV = 0x49;
 
 
 	bpp = BPP[PRE0 & PRE0_BPP_MASK];
@@ -2028,6 +2023,7 @@ void  DrawLRCel_New(void)
 	pixcount = 0;
 	offset = (offsetl == 1) ? ((PRE1 & PRE1_WOFFSET8_MASK) >> PRE1_WOFFSET8_SHIFT) : ((PRE1 & PRE1_WOFFSET10_MASK) >> PRE1_WOFFSET10_SHIFT);
 	offset += 2;
+	offset <<= 2;
 
 	SPRWI = 1 + (PRE1 & PRE1_TLHPCNT_MASK);
 	SPRHI = (((PRE0 & PRE0_VCNT_MASK) >> PRE0_VCNT_SHIFT) << 1) + 2; //doom fix
@@ -2037,30 +2033,32 @@ void  DrawLRCel_New(void)
 	yvert = YPOS1616;
 
 	switch (TEXEL_FUN_NUMBER) {
+	unsigned pixel, framePixel = 0;
 	case 0:
 		xvert += TEXTURE_HI_START * VDX1616;
 		yvert += TEXTURE_HI_START * VDY1616;
 		//if(SPRHI>TEXTURE_HI_LIM)SPRHI=TEXTURE_HI_LIM;
 		if (SPRWI > TEXTURE_WI_LIM) SPRWI = TEXTURE_WI_LIM;
-		for (i = TEXTURE_HI_START; i < TEXTURE_HI_LIM; i++) {
+		for (y = TEXTURE_HI_START; y < TEXTURE_HI_LIM; y++) {
 			xcur = xvert + TEXTURE_WI_START * HDX1616;
 			ycur = yvert + TEXTURE_WI_START * HDY1616;
 			xvert += VDX1616;
 			yvert += VDY1616;
 
-
-			for (j = TEXTURE_WI_START; j < SPRWI; j++) {
-				CURPIX = PDEC(mreadh((PDATA + XY2OFF(j << 2, i, offset << 2))), &LAMV);
-
+			int xp = xcur >> 16;
+			int yp = ycur >> 16;
+			const int hdx = HDX1616 >> 16;
+			const int hdy = HDY1616 >> 16;
+			for (x = TEXTURE_WI_START; x < SPRWI; x++, xp+=hdx, yp+=hdy) {
+				CURPIX = readPixelLR(PDATA, x, y, offset);
+				pproj.Transparent = ( ((CURPIX & 0x7fff) == 0x0) & pdec.tmask );
 				if (!pproj.Transparent) {
-					unsigned framePixel = mreadh((PIXSOURCE + XY2OFF((xcur >> 16) << 2, ycur >> 16, RMOD)));
-					unsigned pixel = PPROC(CURPIX, framePixel, LAMV);
-					pixel = PPROJ_OUTPUT(CURPIX, pixel, framePixel);
-					mwriteh((FBTARGET + XY2OFF((xcur >> 16) << 2, ycur >> 16, WMOD)), pixel);
+					pixel = CURPIX;
+					if (celNeedsFramePixel) framePixel = readFramebufferPixel(PIXSOURCE, xp, yp);
+					if (celNeedsPPROC) pixel = PPROC(CURPIX, framePixel, LAMV);
+					if (celNeedsPPROJ) pixel = PPROJ_OUTPUT(CURPIX, pixel, framePixel);
+					writeFramebufferPixel(FBTARGET, xp, yp, pixel);
 				}
-
-				xcur += HDX1616;
-				ycur += HDY1616;
 			}
 
 		}
@@ -2072,17 +2070,17 @@ void  DrawLRCel_New(void)
 		if (CCBFLAGS & CCB_MARIA && drawHeight > (1 << 16))
 			drawHeight = (1 << 16);
 
-		for (i = 0; i < SPRHI; i++) {
+		for (y = 0; y < SPRHI; y++) {
 			xcur = xvert;
 			ycur = yvert;
 			xvert += VDX1616;
 			yvert += VDY1616;
 
 
-			for (j = 0; j < SPRWI; j++) {
+			for (x = 0; x < SPRWI; x++) {
 
-				CURPIX = PDEC(mreadh((PDATA + XY2OFF(j << 2, i, offset << 2))), &LAMV);
-
+				CURPIX = readPixelLR(PDATA, x, y, offset);
+				pproj.Transparent = ( ((CURPIX & 0x7fff) == 0x0) & pdec.tmask );
 				if (!pproj.Transparent) {
 
 					if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + HDX1616 + VDX1616) >> 16, (ycur + HDY1616 + drawHeight) >> 16))
@@ -2099,8 +2097,7 @@ void  DrawLRCel_New(void)
 	}
 	break;
 	default:
-		for (i = 0; i < SPRHI; i++) {
-
+		for (y = 0; y < SPRHI; y++) {
 
 			xcur = xvert;
 			ycur = yvert;
@@ -2114,9 +2111,9 @@ void  DrawLRCel_New(void)
 			HDY1616 += HDDY1616;
 
 
-			for (j = 0; j < SPRWI; j++) {
-				CURPIX = PDEC(mreadh((PDATA + XY2OFF(j << 2, i, offset << 2))), &LAMV);
-
+			for (x = 0; x < SPRWI; x++) {
+				CURPIX = readPixelLR(PDATA, x, y, offset);
+				pproj.Transparent = ( ((CURPIX & 0x7fff) == 0x0) & pdec.tmask );
 				if (!pproj.Transparent) {
 					if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
 						break;
@@ -2137,10 +2134,8 @@ void  DrawLRCel_New(void)
 
 	if (fixmode & FIX_BIT_GRAPHICS_STEP_Y) {
 		YPOS1616 = ycur;
-		YPOS = YPOS1616 / 65536.0;
 	} else {
 		XPOS1616 = xcur;
-		XPOS = XPOS1616 / 65536.0;
 	}
 }
 
@@ -2174,26 +2169,26 @@ void _madam_SetMapping(unsigned int flag)
 
 #include <math.h>
 
-unsigned int TexelCCWTest(double hdx, double hdy, double vdx, double vdy)
+static INLINE unsigned int TexelCCWTest(int64_t hdx, int64_t hdy, int64_t vdx, int64_t vdy)
 {
-	if (((hdx + vdx) * (hdy - vdy) + vdx * vdy - hdx * hdy) < 0.0)
+	if (((hdx + vdx) * (hdy - vdy) + vdx * vdy - hdx * hdy) < 0)
 		return CCB_ACCW;
 	return CCB_ACW;
 }
 
-bool QuardCCWTest(int wdt)
+bool QuadCCWTest(int wdt)
 {
 	unsigned int tmp;
 
 	if (((CCBFLAGS & CCB_ACCW)) && ((CCBFLAGS & CCB_ACW)))
 		return false;
 
-	tmp = TexelCCWTest(HDX, HDY, VDX, VDY);
-	if (tmp != TexelCCWTest(HDX, HDY, VDX + (HDDX)*(float)wdt, VDY + (HDDY)*(float)wdt))
+	tmp = TexelCCWTest(HDX1616, HDY1616, VDX1616, VDY1616);
+	if (tmp != TexelCCWTest(HDX1616, HDY1616, VDX1616 + HDDX1616*wdt, VDY1616 + HDDY1616*wdt))
 		return false;
-	if (tmp != TexelCCWTest(HDX + (HDDX)*SPRHI, HDY + (HDDY)*SPRHI, VDX, VDY))
+	if (tmp != TexelCCWTest(HDX1616 + HDDX1616*SPRHI, HDY1616 + HDDY1616*SPRHI, VDX1616, VDY1616))
 		return false;
-	if (tmp != TexelCCWTest(HDX + (HDDX)*SPRHI, HDY + (HDDY)*SPRHI, VDX + (HDDX)*(float)SPRHI * (float)wdt, VDY + (HDDY)*(float)SPRHI * (float)wdt))
+	if (tmp != TexelCCWTest(HDX1616 + HDDX1616*SPRHI, HDY1616 + HDDY1616*SPRHI, VDX1616 + HDDX1616*SPRHI * wdt, VDY1616 + HDDY1616*SPRHI * wdt))
 		return false;
 	if (tmp == (CCBFLAGS & (CCB_ACCW | CCB_ACW)))
 		return true;
@@ -2299,7 +2294,7 @@ int TestInitVisual(int packed)
 		}
 	}
 
-	if (QuardCCWTest((!packed) ? SPRWI : 2048)) return -1;
+	if (QuadCCWTest((!packed) ? SPRWI : 2048)) return -1;
 	Init_Arbitrary_Map();
 
 
@@ -2418,8 +2413,6 @@ void Init_Scale_Map(void)
 	if (deltay < 0) TEXEL_INCY = -1;
 	else TEXEL_INCY = 1;
 
-	TEXEL_INCX <<= 2;
-
 	TEXTURE_WI_START = 0;
 	TEXTURE_HI_START = 0;
 }
@@ -2431,47 +2424,55 @@ void Init_Arbitrary_Map(void)
 	TEXTURE_HI_START = 0;
 }
 
-int  TexelDraw_Line(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int cnt)
+void TexelDraw_BitmapRow(uint16_t LAMV, int xcur, int ycur, int cnt)
 {
-	int i = 0;
-	unsigned int pixel = 0;
-	unsigned int curr = 0xffffffff;
+	int x;
+	unsigned pixel, framePixel = 0;
 
-	xcur >>= 16;
-	ycur >>= 16;
-
-	for (i = 0; i < cnt; i++, xcur += (HDX1616 >> 16), ycur += (HDY1616 >> 16)) {
-		unsigned next = mreadh((PIXSOURCE + XY2OFF((xcur) << 2, ycur, RMOD)));
-
-		if (next != curr) {
-			curr = next;
-			pixel = PPROC(CURPIX, next, LAMV);
+	int xp = xcur >> 16;
+	int yp = ycur >> 16;
+	const int hdx = HDX1616 >> 16;
+	const int hdy = HDY1616 >> 16;
+	for (x = 0; x < cnt; x++, xp += hdx, yp += hdy) {
+		uint16_t CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
+		if (!pproj.Transparent) {
+			pixel = CURPIX;
+			if (celNeedsFramePixel) framePixel = readFramebufferPixel(PIXSOURCE, xp, yp);
+			if (celNeedsPPROC) pixel = PPROC(CURPIX, framePixel, LAMV);
+			if (celNeedsPPROJ) pixel = PPROJ_OUTPUT(CURPIX, pixel, framePixel);
+			writeFramebufferPixel(FBTARGET, xp, yp, pixel);
 		}
-		//pixel=PPROC(CURPIX,mreadh((PIXSOURCE+XY2OFF((xcur>>16)<<2,ycur>>16,RMOD))),LAMV);
-		pixel = PPROJ_OUTPUT(CURPIX, pixel, next);
-		mwriteh((FBTARGET + XY2OFF((xcur) << 2, ycur, WMOD)), pixel);
 	}
-	return 0;
 }
 
-static INLINE uint16_t readPIX(uint32_t src, int i, int j)
+void TexelDraw_Line(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int cnt)
 {
-	src += XY2OFF((j << 2), i, WMOD);
-	return *((uint16_t*)&Mem[src ^ 2]);
-}
+	int x;
+	unsigned int pixel = CURPIX;
+	unsigned int nextFramePixel = 0;
+	unsigned int currFramePixel = 0xffffffff;
 
-static INLINE void writePIX(uint32_t src, int i, int j, uint16_t pix)
-{
-	src += XY2OFF((j << 2), i, WMOD);
-	*((uint16_t*)&Mem[src ^ 2]) = pix;
+	int xp = xcur >> 16;
+	int yp = ycur >> 16;
+	const int hdx = HDX1616 >> 16;
+	const int hdy = HDY1616 >> 16;
+	for (x = 0; x < cnt; x++, xp += hdx, yp += hdy) {
+		if (celNeedsFramePixel) nextFramePixel = readFramebufferPixel(PIXSOURCE, xp, yp);
+		if (nextFramePixel != currFramePixel) {
+			currFramePixel = nextFramePixel;
+			if (celNeedsPPROC) pixel = PPROC(CURPIX, nextFramePixel, LAMV);
+			if (celNeedsPPROJ) pixel = PPROJ_OUTPUT(CURPIX, pixel, nextFramePixel);
+		}
+		writeFramebufferPixel(FBTARGET, xp, yp, pixel);
+	}
 }
-
 
 int  TexelDraw_Scale(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int deltax, int deltay)
 {
-	int i, j;
-	unsigned int pixel;
-	unsigned int framePixel;
+	int x, y;
+	unsigned int pixel = CURPIX;
+	unsigned int nextFramePixel = 0;
+	unsigned int currFramePixel = 0xffffffff;
 
 	if ((HDX1616 < 0) && (deltax) < 0 && xcur < 0)
 		return -1;
@@ -2482,25 +2483,25 @@ int  TexelDraw_Scale(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int del
 	else if ((HDY1616 > 0) && ((deltay)) > (CLIPYVAL) && (ycur) > (CLIPYVAL))
 		return -1;
 
-	if ((((int)xcur)) == (((int)deltax)))
+	if (xcur == deltax)
 		return 0;
 
-	for (i = ((int)ycur); i != (((int)deltay)); i += TEXEL_INCY)
-		for (j = (((int)xcur)) << 2; j != ((((int)deltax)) << 2); j += TEXEL_INCX)
-			if ((TESTCLIP((j << 14), (i << 16)))) {
-				framePixel = mreadh((PIXSOURCE + XY2OFF(j, i, RMOD)));
-				pixel = PPROC(CURPIX, framePixel, LAMV);
-				pixel = PPROJ_OUTPUT(CURPIX, pixel, framePixel);
-				//next=mreadh((PIXSOURCE+XY2OFF(j,i,RMOD)));
-				//if(next!=curr){curr=next;pixel=PPROC(CURPIX,next,LAMV);}
-				mwriteh((FBTARGET + XY2OFF(j, i, WMOD)), pixel);
-
+	for (y = ycur; y != deltay; y += TEXEL_INCY)
+		for (x = xcur; x != deltax; x += TEXEL_INCX)
+			if (TESTCLIP(x,y)) {
+				if (celNeedsFramePixel) nextFramePixel = readFramebufferPixel(PIXSOURCE, x, y);
+				if (nextFramePixel != currFramePixel) {
+					currFramePixel = nextFramePixel;
+					if (celNeedsPPROC) pixel = PPROC(CURPIX, nextFramePixel, LAMV);
+					if (celNeedsPPROJ) pixel = PPROJ_OUTPUT(CURPIX, pixel, nextFramePixel);
+				}
+				writeFramebufferPixel(FBTARGET, x, y, pixel);
 			}
 
 	return 0;
 }
 
-static INLINE int TexelCCWTestSmp(int hdx, int hdy, int vdx, int vdy)
+int TexelCCWTestSmp(int hdx, int hdy, int vdx, int vdy)
 {
 	if (((hdx + vdx) * (hdy - vdy) + vdx * vdy - hdx * hdy) < 0)
 		return CCB_ACCW;
@@ -2510,10 +2511,11 @@ static INLINE int TexelCCWTestSmp(int hdx, int hdy, int vdx, int vdy)
 int  TexelDraw_Arbitrary(uint16_t CURPIX, uint16_t LAMV,
 			 int xA, int yA, int xB, int yB, int xC, int yC, int xD, int yD)
 {
-	int miny, maxy, i, xpoints[4], j, maxyt, maxxt, maxx;
-	int updowns[4], jtmp;
-	unsigned int pixel = 0;
-	unsigned int curr = -1, next;
+	int miny, maxy, x, xpoints[4], y, maxyt, maxxt, maxx;
+	int updowns[4], ytmp;
+	unsigned int pixel = CURPIX;
+	unsigned int nextFramePixel = 0;
+	unsigned int currFramePixel = 0xffffffff;
 
 	xA >>= 16;
 	xB >>= 16;
@@ -2554,43 +2556,43 @@ int  TexelDraw_Arbitrary(uint16_t CURPIX, uint16_t LAMV,
 	if (maxy < yC) maxy = yC;
 	if (maxy < yD) maxy = yD;
 
-	i = (miny);
-	if (i < 0) i = 0;
+	y = (miny);
+	if (y < 0) y = 0;
 	if (maxy < maxyt) maxyt = maxy;
 
 
-	for (; i < maxyt; i++) {
+	for (; y < maxyt; y++) {
 		int cnt_cross = 0;
-		if (i < (yB) && i >= (yA)) {
-			xpoints[cnt_cross] = (int)((quickDivide(((xB - xA) * (i - yA)), (yB - yA)) + xA));
+		if (y < (yB) && y >= (yA)) {
+			xpoints[cnt_cross] = (int)((quickDivide(((xB - xA) * (y - yA)), (yB - yA)) + xA));
 			updowns[cnt_cross++] = 1;
-		} else if (i >= (yB) && i < (yA)) {
-			xpoints[cnt_cross] = (int)((quickDivide(((xA - xB) * (i - yB)), (yA - yB)) + xB));
+		} else if (y >= (yB) && y < (yA)) {
+			xpoints[cnt_cross] = (int)((quickDivide(((xA - xB) * (y - yB)), (yA - yB)) + xB));
 			updowns[cnt_cross++] = 0;
 		}
 
-		if (i < (yC) && i >= (yB)) {
-			xpoints[cnt_cross] = (int)((quickDivide(((xC - xB) * (i - yB)), (yC - yB)) + xB));
+		if (y < (yC) && y >= (yB)) {
+			xpoints[cnt_cross] = (int)((quickDivide(((xC - xB) * (y - yB)), (yC - yB)) + xB));
 			updowns[cnt_cross++] = 1;
-		} else if (i >= (yC) && i < (yB)) {
-			xpoints[cnt_cross] = (int)((quickDivide(((xB - xC) * (i - yC)), (yB - yC)) + xC));
+		} else if (y >= (yC) && y < (yB)) {
+			xpoints[cnt_cross] = (int)((quickDivide(((xB - xC) * (y - yC)), (yB - yC)) + xC));
 			updowns[cnt_cross++] = 0;
 		}
 
-		if (i < (yD) && i >= (yC)) {
-			xpoints[cnt_cross] = (int)((quickDivide(((xD - xC) * (i - yC)), (yD - yC)) + xC));
+		if (y < (yD) && y >= (yC)) {
+			xpoints[cnt_cross] = (int)((quickDivide(((xD - xC) * (y - yC)), (yD - yC)) + xC));
 			updowns[cnt_cross++] = 1;
-		} else if (i >= (yD) && i < (yC)) {
-			xpoints[cnt_cross] = (int)((quickDivide(((xC - xD) * (i - yD)), (yC - yD)) + xD));
+		} else if (y >= (yD) && y < (yC)) {
+			xpoints[cnt_cross] = (int)((quickDivide(((xC - xD) * (y - yD)), (yC - yD)) + xD));
 			updowns[cnt_cross++] = 0;
 		}
 
 		if (cnt_cross & 1) {
-			if (i < (yA) && i >= (yD)) {
-				xpoints[cnt_cross] = (int)((quickDivide(((xA - xD) * (i - yD)), (yA - yD)) + xD));
+			if (y < (yA) && y >= (yD)) {
+				xpoints[cnt_cross] = (int)((quickDivide(((xA - xD) * (y - yD)), (yA - yD)) + xD));
 				updowns[cnt_cross] = 1;
-			} else if (i >= (yA) && i < (yD)) {
-				xpoints[cnt_cross] = (int)((quickDivide(((xD - xA) * (i - yA)), (yD - yA)) + xA));
+			} else if (y >= (yA) && y < (yD)) {
+				xpoints[cnt_cross] = (int)((quickDivide(((xD - xA) * (y - yA)), (yD - yA)) + xA));
 				updowns[cnt_cross] = 0;
 			}
 		}
@@ -2602,25 +2604,25 @@ int  TexelDraw_Arbitrary(uint16_t CURPIX, uint16_t LAMV,
 				xpoints[0] = xpoints[1] - xpoints[0];
 				xpoints[1] = xpoints[1] - xpoints[0];
 
-				jtmp = updowns[0];
+				ytmp = updowns[0];
 				updowns[0] = updowns[1];
-				updowns[1] = jtmp;
+				updowns[1] = ytmp;
 			}
 			if (cnt_cross > 2) {
 				if ( ((CCBFLAGS & CCB_ACW) && updowns[2] == 0) ||
 				     ((CCBFLAGS & CCB_ACCW) && updowns[2] == 1)) {
-					j = xpoints[2];
-					if (j < 0) j = 0;
+					x = xpoints[2];
+					if (x < 0) x = 0;
 					maxx = xpoints[3];
 					if (maxx > maxxt) maxx = maxxt;
-					for (; j < maxx; j++) {
-						next = readPIX(PIXSOURCE, i, j);
-						if (next != curr) {
-							curr = next;
-							pixel = PPROC(CURPIX, next, LAMV);
-							pixel = PPROJ_OUTPUT(CURPIX, pixel, next);
+					for (; x < maxx; x++) {
+						if (celNeedsFramePixel) nextFramePixel = readFramebufferPixel(PIXSOURCE, x, y);
+						if (nextFramePixel != currFramePixel) {
+							currFramePixel = nextFramePixel;
+							if (celNeedsPPROC) pixel = PPROC(CURPIX, nextFramePixel, LAMV);
+							if (celNeedsPPROJ) pixel = PPROJ_OUTPUT(CURPIX, pixel, nextFramePixel);
 						}
-						writePIX(FBTARGET, i, j, pixel);
+						writeFramebufferPixel(FBTARGET, x, y, pixel);
 					}
 				}
 
@@ -2628,25 +2630,22 @@ int  TexelDraw_Arbitrary(uint16_t CURPIX, uint16_t LAMV,
 
 			if ( ((CCBFLAGS & CCB_ACW) && updowns[0] == 0) ||
 			     ((CCBFLAGS & CCB_ACCW) && updowns[0] == 1)) {
-				j = xpoints[0];
-				if (j < 0) j = 0;
+				x = xpoints[0];
+				if (x < 0) x = 0;
 				maxx = xpoints[1];
 				if (maxx > maxxt) maxx = maxxt;
 
-				for (; j < maxx; j++) {
-					next = readPIX(PIXSOURCE, i, j);
-					if (next != curr) {
-						curr = next;
-						pixel = PPROC(CURPIX, next, LAMV);
-						pixel = PPROJ_OUTPUT(CURPIX, pixel, next);
+				for (; x < maxx; x++) {
+					if (celNeedsFramePixel) nextFramePixel = readFramebufferPixel(PIXSOURCE, x, y);
+					if (nextFramePixel != currFramePixel) {
+						currFramePixel = nextFramePixel;
+						if (celNeedsPPROC) pixel = PPROC(CURPIX, nextFramePixel, LAMV);
+						if (celNeedsPPROJ) pixel = PPROJ_OUTPUT(CURPIX, pixel, nextFramePixel);
 					}
-					writePIX(FBTARGET, i, j, pixel);
+					writeFramebufferPixel(FBTARGET, x, y, pixel);
 				}
 			}
-
 		}
-
 	}
-
 	return 0;
 }

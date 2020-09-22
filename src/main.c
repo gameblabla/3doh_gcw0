@@ -24,6 +24,7 @@
 #include "freedocore.h"
 #include "common.h"
 #include "timer.h"
+#include "tinyfps.h"
 
 
 char* pNVRam;
@@ -188,6 +189,8 @@ int main(int argc, char *argv[])
 
 	fsInit();
 	/*readConfiguration(configFile);*/
+
+	initFpsFonts();
 
 	if (!initEmu())
 		return 0;

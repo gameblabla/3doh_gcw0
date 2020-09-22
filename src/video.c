@@ -1,6 +1,8 @@
 #include "freedocore.h"
 #include "video.h"
 #include "frame.h"
+#include "timer.h"
+#include "tinyfps.h"
 
 SDL_Surface *screen;
 struct VDLFrame *frame;
@@ -21,7 +23,7 @@ int videoInit(void)
 	}
 
 	SDL_ShowCursor(0);
-	screen = SDL_SetVideoMode(320, 240, 16, flags);
+	screen = SDL_SetVideoMode(SCREEN_WIDTH, SCREEN_HEIGHT, 16, flags);
 
 	return 0;
 }
@@ -40,7 +42,8 @@ int videoClose()
 void videoFlip()
 {
 	SDL_LockSurface( screen );
-	Get_Frame_Bitmap((struct VDLFrame*)frame, screen->pixels, 320, 240);
+	Get_Frame_Bitmap((struct VDLFrame*)frame, screen->pixels, SCREEN_WIDTH, SCREEN_HEIGHT);
+	drawDecimal(getFps(), 0, SCREEN_HEIGHT - FPS_FONT_HEIGHT, (unsigned short*)screen->pixels);
 	SDL_UnlockSurface( screen );
 	SDL_Flip(screen);
 }
