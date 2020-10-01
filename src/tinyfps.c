@@ -1,3 +1,4 @@
+#ifdef FRAMECOUNTER
 #include <stdio.h>
 
 #include "tinyfps.h"
@@ -62,3 +63,4 @@ void drawDecimal(unsigned int number, int posX, int posY, unsigned short *vram)
 		i++;
 	}
 }
+#endif

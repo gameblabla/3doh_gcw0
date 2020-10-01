@@ -190,7 +190,9 @@ int main(int argc, char *argv[])
 	fsInit();
 	/*readConfiguration(configFile);*/
 
+	#ifdef FRAMECOUNTER
 	initFpsFonts();
+	#endif
 
 	if (!initEmu())
 		return 0;

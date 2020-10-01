@@ -43,7 +43,9 @@ void videoFlip()
 {
 	SDL_LockSurface( screen );
 	Get_Frame_Bitmap((struct VDLFrame*)frame, screen->pixels, SCREEN_WIDTH, SCREEN_HEIGHT);
+	#ifdef FRAMECONTER
 	drawDecimal(getFps(), 0, SCREEN_HEIGHT - FPS_FONT_HEIGHT, (unsigned short*)screen->pixels);
+	#endif
 	SDL_UnlockSurface( screen );
 	SDL_Flip(screen);
 }
