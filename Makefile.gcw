@@ -1,18 +1,27 @@
-CC = /opt/gcw0-toolchain-static/bin/mipsel-linux-gcc
+CC = /opt/gcw0-toolchain/bin/mipsel-linux-gcc
 TARGET = 3doh
-PROFILE = 0
+PROFILE = APPLY
+HUGEPAGES = 1
 
-CFLAGS  = -Ofast -mips32r2 -flto -D__GCW__ -fomit-frame-pointer -mframe-header-opt -mno-fp-exceptions -mno-check-zero-division -mno-abicalls -fno-common -Wall -Wextra
+CFLAGS  = -Ofast -flto -mips32r2 -falign-functions=1 -falign-jumps=1 -falign-loops=1 -falign-labels=1 -mno-check-zero-division -mframe-header-opt -fno-common
 CFLAGS += -Isrc -Isrc/freedo
 LDFLAGS =
 
-LDFLAGS += -nodefaultlibs -lc -lgcc -lgcov -lSDL -lasound -no-pie -Wl,--as-needed -flto -s
+ifeq ($(HUGEPAGES), 1)
+LDFLAGS = -lc -lgcc -lSDL -lasound
+LDFLAGS += -Wl,-zcommon-page-size=2097152 -Wl,-zmax-page-size=2097152 -lhugetlbfs
+else
+LDFLAGS = -nodefaultlibs -lc -lgcc -lSDL -lasound -no-pie -Wl,--as-needed -flto -s
+endif
 
 ifeq ($(PROFILE), YES)
-CFLAGS += -fprofile-generate=/media/roms/3doh
+# GKD350H build
+#CFLAGS += -fprofile-generate=/media/roms/3doh
+# GCW0
+CFLAGS += -fprofile-generate=/usr/local/home
+LDFLAGS += -lgcov
 else ifeq ($(PROFILE), APPLY)
 CFLAGS		+= -fprofile-use
-LDFLAGS += -lgcov
 endif
 
 
@@ -48,6 +57,9 @@ pack:
 
 $(TARGET): $(OBJS)
 	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
+ifeq ($(HUGE_PAGES), 1)
+	hugeedit --text --data $(TARGET)
+endif
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
