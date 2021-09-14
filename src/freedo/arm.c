@@ -45,7 +45,7 @@
 extern int fixmode;
 extern int cnbfix;
 
-extern _ext_Interface io_interface;
+//extern _ext_Interface io_interface;
 
 #define ARM_ALU_MASK    0x0c000000
 #define ARM_ALU_SIGN    0x00000000
@@ -566,8 +566,7 @@ uint8_t *_arm_Init(void)
 	memset( pNVRam, 0, NVRAMSIZE);
 	gFIQ = false;
 
-	io_interface(EXT_READ_NVRAM, pNVRam);//_3do_LoadNVRAM(pNVRam);
-
+	readNvRam(pNVRam);
 	// Endian swap for loaded ROM image
 
 	REG_PC = 0x03000000;
@@ -580,7 +579,9 @@ void _arm_Destroy(void)
 {
 	cpu->Destroy();
 
-	io_interface(EXT_WRITE_NVRAM, pNVRam);//_3do_SaveNVRAM(pNVRam);
+	/* Does nothing right now */
+	writeNvRam();
+	//io_interface(EXT_WRITE_NVRAM, pNVRam);//_3do_SaveNVRAM(pNVRam);
 
 	free(pNVRam);
 	free(pRom);
@@ -1586,7 +1587,9 @@ void mwritew(uint32_t addr, uint32_t val)
 			//  CDebug::DPrint(str);
 			pNVRam[(index >> 2) & 32767] = (uint8_t)val;
 			//CConfig::SetNVRAMData(pNVRam);
-			io_interface(EXT_WRITE_NVRAM, pNVRam);//_3do_SaveNVRAM(pNVRam);
+			/* Does nothing right now */
+			writeNvRam();
+			//io_interface(EXT_WRITE_NVRAM, pNVRam);//_3do_SaveNVRAM(pNVRam);
 		}
 		return;
 	}
@@ -1664,7 +1667,9 @@ void mwriteb(uint32_t addr, uint32_t val)
 			//if((addr&3)==3)
 			{
 				pNVRam[(index >> 2) & 32767] = val;
-				io_interface(EXT_WRITE_NVRAM, pNVRam);//_3do_SaveNVRAM(pNVRam);
+				/* Does nothing right now */
+				writeNvRam();
+				//io_interface(EXT_WRITE_NVRAM, pNVRam);//_3do_SaveNVRAM(pNVRam);
 			}
 			return;
 		}

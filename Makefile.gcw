@@ -26,7 +26,6 @@ LDFLAGS += -nodefaultlibs
 endif
 
 OBJS = \
-        src/freedo/mips_dynarec.o \
 	src/freedo/arm.o \
 	src/freedo/DiagPort.o\
 	src/freedo/quarz.o\
@@ -40,14 +39,15 @@ OBJS = \
 	src/freedo/Iso.o \
 	src/freedo/SPORT.o \
 	src/freedo/XBUS.o \
+	src/freedo/freedo_fixedpoint_math.o \
 	src/video.o \
 	src/sound.o \
 	src/cdrom.o \
 	src/timer.o \
 	src/input.o \
 	src/config.o \
+	src/cuefile.o \
 	src/font/font_drawing.o \
-	src/tinyfps.o \
 	src/main.o
 
 all: $(TARGET)

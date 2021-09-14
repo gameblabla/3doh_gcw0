@@ -37,14 +37,13 @@
 #include "XBUS.h"
 #include "DiagPort.h"
 #include "quarz.h"
-
-_ext_Interface io_interface;
+#include "fs.h"
+#include "sound.h"
+#include "input.h"
 
 extern void* Getp_NVRAM(void);
 extern void* Getp_ROMS(void);
 extern void* Getp_RAMS(void);
-extern int ARM_CLOCK;
-extern int THE_ARM_CLOCK;
 
 static INLINE uint32_t _bswap(uint32_t x)
 {
@@ -52,6 +51,8 @@ static INLINE uint32_t _bswap(uint32_t x)
 }
 
 extern void* _xbplug_MainDevice(int proc, void* data);
+
+extern char biosFile[128];
 
 int _3do_Init(void)
 {
@@ -61,7 +62,8 @@ int _3do_Init(void)
 
 	Memory = _arm_Init();
 
-	io_interface(EXT_READ_ROMS, Getp_ROMS());
+	fsReadBios(biosFile, Getp_ROMS());
+	
 	rom = (uint8_t*)Getp_ROMS();
 	for (i = (1024 * 1024 * 2) - 4; i >= 0; i -= 4)
 		*(int*)(rom + i) = _bswap(*(int*)(rom + i));
@@ -113,6 +115,12 @@ int _3do_Init(void)
 
 struct VDLFrame *curr_frame;
 bool skipframe;
+int count_samples = 0;
+
+static void *swapFrame(void *curr_frame)
+{
+	return curr_frame;
+}
 
 void _3do_InternalFrame(int cycles)
 {
@@ -121,7 +129,10 @@ void _3do_InternalFrame(int cycles)
 	_qrz_PushARMCycles(cycles);
 
 	if (_qrz_QueueDSP())
-		io_interface(EXT_PUSH_SAMPLE, (void*)(uintptr_t)_dsp_Loop());
+	{
+		soundFillBuffer(_dsp_Loop());
+		count_samples++;	
+	}
 
 	if (_qrz_QueueTimer())
 		_clio_DoTimers();
@@ -133,19 +144,24 @@ void _3do_InternalFrame(int cycles)
 		if (!skipframe)
 			_vdl_DoLineNew(line, curr_frame);
 
-		if (line == 16 && skipframe)
+		/* Does nothing right now - Gameblabla */
+		/*if (line == 16 && skipframe)
+		{
 			io_interface(EXT_FRAMETRIGGER_MT, NULL);
+		}*/
 
 		if (line == _clio_v0line())
 			_clio_GenerateFiq(1 << 0, 0);
 
 		if (line == _clio_v1line()) {
 			_clio_GenerateFiq(1 << 1, 0);
-			_madam_KeyPressed((uint8_t*)io_interface(EXT_GETP_PBUSDATA, NULL), (intptr_t)io_interface(EXT_GET_PBUSLEN, NULL));
+			_madam_KeyPressed(inputRead(), inputLength());
 			//curr_frame->srcw=320;
 			//curr_frame->srch=240;
 			if (!skipframe)
-				curr_frame = (struct VDLFrame*)io_interface(EXT_SWAPFRAME, curr_frame);
+			{
+				curr_frame = swapFrame(curr_frame);
+			}
 		}
 	}
 }
@@ -168,7 +184,7 @@ void _3do_Frame(struct VDLFrame *frame, bool __skipframe)
 		cnt = cpu->Exec(64);
 		_3do_InternalFrame(cnt);
 		i += cnt;
-	} while (i < (12500000 / 60));
+	} while (i < (ARM_CLOCK / 60));
 }
 
 void _3do_Destroy()
@@ -239,20 +255,6 @@ bool _3do_Load(void *buff)
 	return true;
 }
 
-void _3do_OnSector(uint32_t sector)
-{
-	io_interface(EXT_ON_SECTOR, (void*)(uintptr_t)sector);
-}
-
-void _3do_Read2048(void *buff)
-{
-	io_interface(EXT_READ2048, (void*)buff);
-}
-
-uint32_t _3do_DiscSize(void)
-{
-	return (intptr_t)io_interface(EXT_GET_DISC_SIZE, NULL);
-}
 
 int fixmode = 0;
 int speedfixes = 0;
@@ -262,6 +264,7 @@ int unknownflag11 = 0;
 int jw = 0;
 int cnbfix = 0;
 
+/*
 void _freedo_Interface(int procedure, void *datum)
 {
 	int line;
@@ -307,10 +310,12 @@ void _freedo_Interface(int procedure, void *datum)
 		break;
 	case FDP_GETP_PROFILE:
 		break;
+	#ifdef ADJUSTABLE_CLOCK
 	case FDP_SET_ARMCLOCK:
 		THE_ARM_CLOCK = 0;
 		ARM_CLOCK = (intptr_t)datum;
 		break;
+	#endif
 	case FDP_SET_TEXQUALITY:
 		// Not supported
 		break;
@@ -335,3 +340,4 @@ void _freedo_Interface(int procedure, void *datum)
 //		break;
 	}
 }
+*/

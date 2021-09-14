@@ -2,6 +2,7 @@
 #define LIBFREEDO_SWI_HLE_0X5XXXX_H_INCLUDED
 
 #include "freedo_fixedpoint_math.h"
+#include "retro_inline.h"
 
 #include <stdint.h>
 

@@ -25,19 +25,19 @@
 #include "common.h"
 #include "timer.h"
 #include "tinyfps.h"
+#include "vdlp.h"
+#include "_3do_sys.h"
 #include "font/font_drawing.h"
 
 char* pNVRam;
-extern _ext_Interface io_interface;
-_ext_Interface fd_interface;
+/*extern _ext_Interface io_interface;
+_ext_Interface fd_interface;*/
 int onsector = 0;
 char biosFile[128];
 char imageFile[128];
 char configFile[128];
 
 unsigned char __temporalfixes;
-
-int count_samples = 0;
 
 int initEmu();
 
@@ -92,63 +92,16 @@ void readNvRam(void *pnvram)
 	/*int w = sizeof(NvRamStr) / 4;*/
 }
 
+void writeNvRam()
+{
+}
+
 
 void loadRom1(void *prom)
 {
 	fsReadBios(biosFile, prom);
 }
 
-
-void *swapFrame(void *curr_frame)
-{
-	return curr_frame;
-}
-
-void * emuinterface(int procedure, void *datum)
-{
-	/*typedef void *(*func_type)(void);*/
-
-	switch (procedure) {
-	case EXT_READ_ROMS:
-		loadRom1(datum);
-		break;
-	case EXT_READ2048:
-		fsReadBlock(datum, onsector);
-		break;
-	case EXT_GET_DISC_SIZE:
-		return (void*)fsReadDiscSize();
-		break;
-	case EXT_ON_SECTOR:
-		onsector = *((int*)&datum);
-		break;
-	case EXT_READ_NVRAM:
-		readNvRam(datum);
-		break;
-	case EXT_WRITE_NVRAM:
-		break;
-	case EXT_PUSH_SAMPLE:
-		soundFillBuffer(*((unsigned int*)&datum));
-		count_samples++;
-		break;
-	case EXT_SWAPFRAME:
-		return swapFrame(datum);
-		break;
-	case EXT_GETP_PBUSDATA:
-		return (void*)inputRead();
-		break;
-	case EXT_GET_PBUSLEN:
-		return (void*)inputLength();
-		break;
-	case EXT_FRAMETRIGGER_MT:
-		break;
-	default:
-		//	return _freedo_Interface(procedure,datum);
-		break;
-	}
-	;
-
-	return (void*)readNvRam;
-}
 
 void readConfiguration(char* config)
 {
@@ -158,6 +111,7 @@ void readConfiguration(char* config)
 
 int main(int argc, char *argv[])
 {
+	uint32_t line;
 	extern SDL_Surface *screen;
 #ifdef SCALING
 	extern SDL_Surface *rl_screen;
@@ -213,8 +167,7 @@ int main(int argc, char *argv[])
 	initFpsFonts();
 	#endif
 
-	io_interface = &emuinterface;
-	fd_interface = (_ext_Interface)&_freedo_Interface;
+	//io_interface = &emuinterface;
 	soundInit();
 	inputInit();
 
@@ -224,16 +177,14 @@ int main(int argc, char *argv[])
 		goto got_error;
 	}
 
-	fd_interface(FDP_SET_ARMCLOCK, (void*)12500000);
-	fd_interface(FDP_SET_TEXQUALITY, (void*)0);
-
 	_3do_Init();
 
 	while (!quit) {
 		extern struct VDLFrame *frame;
 
-		fd_interface(FDP_DO_EXECFRAME_MT, (struct VDLFrame*)frame);
-		fd_interface(FDP_DO_FRAME_MT, (struct VDLFrame*)frame);
+		_3do_Frame((struct VDLFrame*)frame, true);
+		line = 0;
+		while (line < 256) _vdl_DoLineNew(line++, (struct VDLFrame*)frame);
 
 		videoFlip();
 
@@ -313,11 +264,7 @@ got_error:
 	soundClose();
 	videoClose();
 	SDL_Quit();
-	
-	if (fd_interface)
-	{
-		fd_interface(FDP_DESTROY, (void*)0);
-	}
+	_3do_Destroy();
 	fsClose();
 
 	return 0;

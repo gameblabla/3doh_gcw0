@@ -112,13 +112,23 @@ typedef void* (*_ext_Interface)(int, void*);
 #define FIX_BIT_TIMING_7        (0x00000040)
 #define FIX_BIT_GRAPHICS_STEP_Y (0x00080000) // Preserve Y coordinate rather than X between CELs.
 
+
+/* 3DO's ARM clock speed */
+#ifdef ADJUSTABLE_CLOCK
+extern uint32_t ARM_CLOCK;
+extern uint32_t THE_ARM_CLOCK;
+#else
+#define ARM_CLOCK 12500000
+#define THE_ARM_CLOCK 0
+#endif
+
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-void _freedo_Interface(int procedure, void *datum);
-
+extern void readNvRam(void *pnvram);
+extern void writeNvRam(void);
 #ifdef __cplusplus
 };
 #endif

@@ -32,10 +32,10 @@
 
 #define SND_CLOCK       44100
 
-int ARM_CLOCK = 12500000;
-int THE_ARM_CLOCK = 0;
-
-extern _ext_Interface io_interface;
+#ifdef ADJUSTABLE_CLOCK
+uint32_t ARM_CLOCK = 12500000;
+uint32_t THE_ARM_CLOCK = 0;
+#endif
 
 extern int sdf;
 extern int sf;
@@ -147,10 +147,14 @@ void  _qrz_PushARMCycles(uint32_t clks)
 		sf--;
 	if (unknownflag11 > 0)
 		unknownflag11--;
+
+	#ifdef ADJUSTABLE_CLOCK
 	if (ARM_CLOCK < 0x5F5E10)
 		ARM_CLOCK = 0x5F5E10;
 	if (ARM_CLOCK > 0x2FAF080)
 		ARM_CLOCK = 0x2FAF080;
+	#endif
+	
 	if (speedfixes > 0 && speedfixes < 0x186A1) {
 		/*sp=0x2DC6C0;*/ speedfixes--;
 	} else if (speedfixes > 0x186A1 && speedfixes < 0x30D41) {
@@ -201,10 +205,12 @@ void  _qrz_PushARMCycles(uint32_t clks)
 	if ((ARM_CLOCK - sp) < 0x2DC6C0)
 		sp = -(0x2DC6C0 - ARM_CLOCK);
 
+	#ifdef ADJUSTABLE_CLOCK
 	if ((ARM_CLOCK - sp) != THE_ARM_CLOCK) {
 		THE_ARM_CLOCK = (ARM_CLOCK - sp);
 		io_interface(EXT_ARM_SYNC, (void*)(intptr_t)THE_ARM_CLOCK); /* fix for working with 4do */
 	}
+	#endif
 	arm = (clks << 24) / (ARM_CLOCK - sp);
 	qrz_AccARM += arm * (ARM_CLOCK - sp);
 	if ( (qrz_AccARM >> 24) != clks ) {

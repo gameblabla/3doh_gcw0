@@ -1,10 +1,10 @@
 CC = /opt/gcw0-toolchain-static/bin/mipsel-linux-gcc
 TARGET = 3doh
-PROFILE = YES
+PROFILE = APPLY
 
 CFLAGS  = -Ofast -fdata-sections -ffunction-sections -mno-abicalls -mno-fp-exceptions -mno-check-zero-division -mframe-header-opt -fno-common -flto -fsingle-precision-constant -march=mips32r2 -mtune=mips32r2 -fno-PIC
 CFLAGS	+= -fno-math-errno -fgcse-las -fgcse-sm -fmerge-all-constants -fno-ident -fno-stack-protector -fomit-frame-pointer -fno-unwind-tables -fno-asynchronous-unwind-tables -freorder-functions -freorder-blocks 
-CFLAGS	+= -Isrc -Isrc/freedo -mno-shared 
+CFLAGS	+= -Isrc -Isrc/freedo -mno-shared  -std=gnu99
 
 CFLAGS  += -DHLE_SWI
 
@@ -21,7 +21,6 @@ LDFLAGS += -nodefaultlibs
 endif
 
 OBJS = \
-        src/freedo/mips_dynarec.o \
 	src/freedo/arm.o \
 	src/freedo/DiagPort.o\
 	src/freedo/quarz.o\
@@ -35,14 +34,15 @@ OBJS = \
 	src/freedo/Iso.o \
 	src/freedo/SPORT.o \
 	src/freedo/XBUS.o \
+	src/freedo/freedo_fixedpoint_math.o \
 	src/video.o \
 	src/sound.o \
 	src/cdrom.o \
 	src/timer.o \
 	src/input.o \
 	src/config.o \
+	src/cuefile.o \
 	src/font/font_drawing.o \
-	src/tinyfps.o \
 	src/main.o
 
 all: $(TARGET)

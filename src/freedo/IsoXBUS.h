@@ -182,6 +182,7 @@ struct cdrom_Device {
 };
 
 extern struct cdrom_Device *isodrive;
+extern int onsector;
 
 #ifdef __cplusplus
 }

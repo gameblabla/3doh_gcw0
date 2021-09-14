@@ -99,6 +99,8 @@ int fsOpenIso(char *path)
 	const char *exts[] = {".cue", ".CUE"};
 	const char *exts_bin[] = {".bin", ".BIN"};
 	
+	if (!path) return 0;
+	
 	/* Detect if input file is .cue or .CUE and if so, change it to bin */
 	for(i=0;i<2;i++)
 	{

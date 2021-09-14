@@ -123,7 +123,6 @@ void _clio_GenerateFiq(uint32_t reason1, uint32_t reason2)
 }
 
 #include "freedocore.h"
-extern _ext_Interface io_interface;
 void _clio_SetTimers(uint32_t v200, uint32_t v208);
 void _clio_ClearTimers(uint32_t v204, uint32_t v20c);
 

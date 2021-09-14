@@ -30,12 +30,9 @@
 #include <stdbool.h>
 
 #include "IsoXBUS.h"
+#include "fs.h"
 
 #pragma pack(pop)
-
-extern unsigned int _3do_DiscSize(void);
-extern void _3do_Read2048(void *buff);
-extern void _3do_OnSector(unsigned int sector);
 
 void LBA2MSF(struct cdrom_Device *cd)
 {
@@ -361,7 +358,7 @@ void DoCommand(struct cdrom_Device *cd)
 				//	fseek(fiso,DISC.templba*2048+iso_off_from_begin,SEEK_SET);
 				{
 					cd->curr_sector = cd->DISC.templba;
-					_3do_OnSector(cd->DISC.templba);
+					onsector = cd->DISC.templba;
 				}
 				//fseek(fiso,DISC.templba*2048,SEEK_SET);
 				//fseek(fiso,DISC.templba*2336,SEEK_SET);
@@ -376,8 +373,8 @@ void DoCommand(struct cdrom_Device *cd)
 			cd->Requested = cd->olddataptr;
 
 			if (cd->Requested) {
-				_3do_OnSector(cd->curr_sector++);
-				_3do_Read2048(cd->Data);
+				onsector = cd->curr_sector++;
+				fsReadBlock(cd->Data, onsector);
 				cd->DataLen = REQSIZE;
 				cd->Requested--;
 			}else
@@ -856,8 +853,8 @@ unsigned int GetDataFifo(struct cdrom_Device *cd)
 			cd->DataPtr = 0;
 
 			if (cd->Requested) {
-				_3do_OnSector(cd->curr_sector++);
-				_3do_Read2048(cd->Data);
+				onsector = cd->curr_sector++;
+				fsReadBlock(cd->Data, onsector);
 				cd->Requested--;
 				cd->DataLen = REQSIZE;
 			} else {
@@ -916,10 +913,10 @@ bool InitCD(struct cdrom_Device *cd)
 
 	//fseek(fiso,0,SEEK_END);
 	cd->curr_sector = 0;
-	_3do_OnSector(0);
+	onsector = 0;
 	//filesize=800000000;//ftell(fiso);
 
-	filesize = _3do_DiscSize() + 150;
+	filesize = fsReadDiscSize() + 150;
 
 
 	//sprintf(str,"FILESIZE=0x%x\n",filesize);
@@ -1030,7 +1027,7 @@ void* _xbplug_MainDevice(int proc, void* data)
 		return (void*)true;
 	case XBP_RESET:
 		cdrom_Init(isodrive);
-		if (_3do_DiscSize())
+		if (fsReadDiscSize())
 			InitCD(isodrive);
 		break;
 	case XBP_SET_COMMAND:

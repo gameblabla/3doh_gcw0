@@ -45,7 +45,3 @@ typedef struct {
 	uint32 lastRootDirCopy;                 // 4 bytes
 	uint32 rootDirCopies[8];                // 32 bytes
 }NvRamStr;
-
-
-void    _3do_Init();
-

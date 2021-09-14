@@ -1217,8 +1217,10 @@ unsigned int  readPLUTDATA(unsigned int offset)
 	CELCYCLES += 4;
 	if (PLUTDATA == 0)
 		return 0;
-	return *(uint16_t*)(PLUTDATA + (offset ^ 2));
-	//return ((uint16_t*)PAL_EXP)[((offset^2)>>1)];
+	
+	/* Gameblabla - this causes a compliation issue : To check ! TODO */
+	//return *(uint16_t*)(PLUTDATA + (offset ^ 2));
+	return ((uint16_t*)PAL_EXP)[((offset^2)>>1)];
 }
 
 unsigned int  PDEC(unsigned int pixel, uint16_t * amv)
@@ -2033,7 +2035,7 @@ void  DrawLRCel_New(void)
 	yvert = YPOS1616;
 
 	switch (TEXEL_FUN_NUMBER) {
-	unsigned pixel, framePixel = 0;
+	unsigned pixel, framePixel;
 	case 0:
 		xvert += TEXTURE_HI_START * VDX1616;
 		yvert += TEXTURE_HI_START * VDY1616;
