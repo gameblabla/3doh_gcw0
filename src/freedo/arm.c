@@ -37,6 +37,11 @@
 
 #include "freedocore.h"
 
+#ifdef HLE_SWI
+#include "freedo_swi_hle_0x5XXXX.h"
+#include "freedo_fixedpoint_math.h"
+#endif
+
 extern int fixmode;
 extern int cnbfix;
 
@@ -794,7 +799,79 @@ typedef struct TagArg {
 	uint32_t Arg;
 } TagItem;
 
-void decode_swi(uint32_t i)
+#ifdef HLE_SWI
+static void decode_swi_lle(void)
+{
+	SPSR[arm_mode_table[0x13]] = CPSR;
+	
+	SETI(1);
+	SETM(0x13);
+	
+	RON_USER[14] = RON_USER[15];
+	RON_USER[15] = 0x00000008;
+}
+
+static void decode_swi(const uint32_t op_)
+{
+	CYCLES -= (SCYCLE + NCYCLE);  // +2S+1N
+	switch(op_ & 0x000FFFFF)
+    {
+    case 0x50000:
+      freedo_swi_hle_0x50000(pRam,RON_USER[0],RON_USER[1],RON_USER[2]);
+      return;
+    case 0x50001:
+      freedo_swi_hle_0x50001(pRam,RON_USER[0],RON_USER[1],RON_USER[2]);
+      return;
+    case 0x50002:
+      freedo_swi_hle_0x50002(pRam,RON_USER[0],RON_USER[1],RON_USER[2],RON_USER[3]);
+      return;
+    case 0x50003:
+      break;
+    case 0x50004:
+      break;
+    case 0x50005:
+      freedo_swi_hle_0x50005(pRam,RON_USER[0],RON_USER[1],RON_USER[2],RON_USER[3]);
+      return;
+    case 0x50006:
+      freedo_swi_hle_0x50006(pRam,RON_USER[0],RON_USER[1],RON_USER[2],RON_USER[3]);
+      return;
+    case 0x50007:
+      freedo_swi_hle_0x50007(pRam,RON_USER[0],RON_USER[1],RON_USER[2]);
+      return;
+    case 0x50008:
+      freedo_swi_hle_0x50008(pRam,RON_USER[0],RON_USER[1],RON_USER[2]);
+      return;
+    case 0x50009:
+      freedo_swi_hle_0x50009(pRam,RON_USER[0],RON_USER[1],RON_USER[2],RON_USER[3]);
+      return;
+    case 0x5000A:
+      break;
+    case 0x5000B:
+      break;
+    case 0x5000C:
+      RON_USER[0] = freedo_swi_hle_0x5000C(pRam,RON_USER[0],RON_USER[1]);
+      return;
+    case 0x5000E:
+      freedo_swi_hle_0x5000E(pRam,RON_USER[0],RON_USER[1],RON_USER[2]);
+      return;
+    case 0x5000F:
+      RON_USER[0] = freedo_swi_hle_0x5000F(pRam,RON_USER[0]);
+      return;
+    case 0x50010:
+      RON_USER[0] = freedo_swi_hle_0x50010(pRam,RON_USER[0]);
+      return;
+    case 0x50011:
+      freedo_swi_hle_0x50011(pRam,RON_USER[0],RON_USER[1],RON_USER[2],RON_USER[3]);
+      return;
+    case 0x50012:
+      freedo_swi_hle_0x50012(pRam,RON_USER[0]);
+      return;
+    }
+
+	return decode_swi_lle();
+}
+#else
+static void decode_swi(uint32_t i)
 {
 
 	(void)i;
@@ -808,6 +885,7 @@ void decode_swi(uint32_t i)
 	REG_PC = 0x00000008;
 	CYCLES -= SCYCLE + NCYCLE; // +2S+1N
 }
+#endif
 
 
 uint32_t carry_out = 0;
