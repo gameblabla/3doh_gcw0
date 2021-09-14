@@ -1,20 +1,15 @@
-CC = /opt/gcw0-toolchain/bin/mipsel-linux-gcc
+CC = /opt/gcw0-toolchain-static/bin/mipsel-linux-gcc
 TARGET = 3doh
-PROFILE = YES
-HUGEPAGES = 1
+PROFILE = APPLY
 
-CFLAGS  = -Ofast -fdata-sections -ffunction-sections -mno-fp-exceptions -mno-check-zero-division -mframe-header-opt -fno-common -flto -fsingle-precision-constant -march=mips32r2 -mtune=mips32r2 -fno-PIC -mno-shared
+CFLAGS  = -Ofast -fdata-sections -ffunction-sections -mno-abicalls -mno-fp-exceptions -mno-check-zero-division -mframe-header-opt -fno-common -flto -fsingle-precision-constant -march=mips32r2 -mtune=mips32r2 -fno-PIC
 CFLAGS	+= -fno-math-errno -fgcse-las -fgcse-sm -fmerge-all-constants -fno-ident -fno-stack-protector -fomit-frame-pointer -fno-unwind-tables -fno-asynchronous-unwind-tables -freorder-functions -freorder-blocks 
-CFLAGS	+= -Isrc -Isrc/freedo -mplt -mno-shared 
+CFLAGS	+= -Isrc -Isrc/freedo -mno-shared 
 
 LDFLAGS = -nodefaultlibs -lc -lgcc -lSDL -lasound -Wl,-z,norelro -Wl,--hash-style=gnu -Wl,--build-id=none -Wl,-O1,--sort-common,--as-needed,--gc-sections -no-pie -flto -s
-ifeq ($(HUGEPAGES), 1)
-LDFLAGS += -Wl,-zcommon-page-size=2097152 -Wl,-zmax-page-size=2097152 -lhugetlbfs
-endif
 
 ifeq ($(PROFILE), YES)
-#CFLAGS += -fprofile-generate=/media/roms/3doh
-CFLAGS	+= -fprofile-generate=/usr/local/home/3doh_cda
+CFLAGS += -fprofile-generate=/media/roms/3doh
 LDFLAGS += -lgcov
 else ifeq ($(PROFILE), APPLY)
 CFLAGS	+= -fprofile-use=$(PWD)
@@ -50,11 +45,10 @@ OBJS = \
 
 all: $(TARGET)
 
+
 $(TARGET): $(OBJS)
 	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
-ifeq ($(HUGE_PAGES), 1)
-	hugeedit --text --data $(TARGET)
-endif
+
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

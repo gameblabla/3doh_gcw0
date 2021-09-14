@@ -56,7 +56,10 @@ int fsOpenIso(char *path)
 
 int fsCloseIso()
 {
-	fclose(fcdrom);
+	if (fcdrom)
+	{
+		fclose(fcdrom);
+	}
 	return 1;
 }
 

@@ -1,0 +1,34 @@
+#!/bin/sh
+
+mkdir -p opk
+cp ./3doh opk/3doh
+cp ./icon.png opk/icon.png
+
+# https://unix.stackexchange.com/questions/219268/how-to-add-new-lines-when-using-echo
+print()
+	case    ${IFS- } in
+	(\ *)   printf  %b\\n "$*";;
+	(*)     IFS=\ $IFS
+	printf  %b\\n "$*"
+	IFS=${IFS#?}
+esac
+
+# Create GmenuNx entry file plus other things
+
+print '[Desktop Entry]
+Type=Application
+Name=3DO!h
+Comment=Needs bios.bin in $HOME/.3doh
+Exec=3doh %f
+Icon=icon
+Terminal=false
+Type=Application
+Categories=emulators;
+X-OD-NeedsDownscaling=true
+selectorbrowser=true
+SelectorFilter=iso,cue,ISO,CUE
+' > opk/default."$1".desktop
+
+mksquashfs ./opk 3doh_"$1".opk -all-root -noappend -no-exports -no-xattrs
+
+rm -r opk

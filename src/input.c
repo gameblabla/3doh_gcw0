@@ -312,6 +312,7 @@ void inputPoll_internal()
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONL;
 				break;
 			case SDLK_ESCAPE:
+			case SDLK_HOME:
 				isexit = 1;
 				break;
 			default:

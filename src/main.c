@@ -25,7 +25,7 @@
 #include "common.h"
 #include "timer.h"
 #include "tinyfps.h"
-
+#include "font/font_drawing.h"
 
 char* pNVRam;
 extern _ext_Interface io_interface;
@@ -156,17 +156,24 @@ void readConfiguration(char* config)
 	configClose();
 }
 
-#undef main
 int main(int argc, char *argv[])
 {
-	(void)argc;
+	extern SDL_Surface *screen;
+#ifdef SCALING
+	extern SDL_Surface *rl_screen;
+#endif
+	SDL_Event event;
 	char home[128];
+	int error = 0;
+	int quit = 0;
+	int waitfps;
+	FILE* fp;
+
+	/* Create Display before in case it crashes before that */
+	videoInit();
 
 #ifndef _WIN32
 	snprintf(home, sizeof(home), "%s/.3doh", getenv("HOME"));
-#else
-	strcpy(home, ".3doh");
-#endif
 	if (access( home, F_OK ) == -1) {
 		printf("Creating home directory...\n");
 		printf("Put your bios there (rename it to bios.bin)\n");
@@ -175,17 +182,29 @@ int main(int argc, char *argv[])
 		, 0755
 #endif
 		);
-		return(0);
+		error = 2;
+		goto got_error;
 	}
+#endif
 
 #ifndef _WIN32
 	snprintf(biosFile, sizeof(biosFile), "%s/.3doh/bios.bin", getenv("HOME"));
 	//snprintf(configFile, sizeof(configFile), "%s/.3doh/config.ini", getenv("HOME"));
 	snprintf(imageFile, sizeof(imageFile), argv[1]);
 #else
-	strcpy(biosFile, ".3doh/bios.bin");
+	strcpy(biosFile, "bios.bin");
 	strcpy(imageFile, argv[1]);
 #endif
+	fp = fopen(biosFile, "rb");
+	if (!fp)
+	{
+		error = 2;
+		goto got_error;
+	}
+	else
+	{
+		fclose(fp);
+	}
 
 	fsInit();
 	/*readConfiguration(configFile);*/
@@ -194,31 +213,16 @@ int main(int argc, char *argv[])
 	initFpsFonts();
 	#endif
 
-	if (!initEmu())
-		return 0;
-
-	fd_interface(FDP_DESTROY, (void*)0);
-	fsClose();
-
-	return 0;
-}
-
-
-
-
-int initEmu()
-{
-	int quit = 0;
-	int waitfps;
-
 	io_interface = &emuinterface;
 	fd_interface = (_ext_Interface)&_freedo_Interface;
-	videoInit();
 	soundInit();
 	inputInit();
 
 	if (!fsOpenIso(imageFile))
-		return 0;
+	{
+		error = 1;
+		goto got_error;
+	}
 
 	fd_interface(FDP_SET_ARMCLOCK, (void*)12500000);
 	fd_interface(FDP_SET_TEXQUALITY, (void*)0);
@@ -241,12 +245,83 @@ int initEmu()
 		#endif
 	}
 
+got_error:
+	/* Jump here in case of error */
+	if (error > 0)
+	{
+		while(!quit)
+		{
+			while (SDL_PollEvent(&event)) 
+			{
+				switch(event.type) 
+				{
+					case SDL_KEYDOWN:
+						switch(event.key.keysym.sym) 
+						{
+							case SDLK_HOME:
+							case SDLK_3:
+							case SDLK_RCTRL:
+							case SDLK_RETURN:
+							case SDLK_ESCAPE:
+								quit = 1;
+							break;
+							default:
+							break;
+						}
+					break;
+					case SDL_QUIT:
+						quit = 1;
+					break;
+				}
+			}
+			
+			switch(error)
+			{
+				case 1:
+					print_string("ISO file INVALID or", 0xFFFF, 0, 0, 15, screen->pixels);
+					print_string("can't be read, does not exist...", 0xFFFF, 0, 0, 30, screen->pixels);
+					if (imageFile)
+					{
+						print_string(imageFile, 0xFFFF, 0, 0, 50, screen->pixels);
+					}
+							
+					print_string("Make sure to use iso or", 0xFFFF, 0, 0, 80, screen->pixels);
+					print_string("iso/cue dumps !", 0xFFFF, 0, 0, 100, screen->pixels);
+				break;
+				case 2:
+					print_string("BIOS file INVALID", 0xFFFF, 0, 0, 15, screen->pixels);
+					print_string("or DOES NOT EXIST !", 0xFFFF, 0, 0, 30, screen->pixels);
+							
+					print_string("Make sure to put the bios file...", 0xFFFF, 0, 0, 80, screen->pixels);
+					print_string(home, 0xFFFF, 0, 0, 100, screen->pixels);
+					print_string("as bios.bin, lowercase.", 0xFFFF, 0, 0, 120, screen->pixels);
+				break;
+			}
+#ifdef SCALING
+			SDL_SoftStretch(screen, NULL, rl_screen, NULL);
+			SDL_Flip(rl_screen);
+#else
+			SDL_Flip(screen);
+#endif
+			SDL_Delay(1);
+		}
+
+	}
 
 	/* Close everything and return */
 	inputClose();
 	soundClose();
 	videoClose();
 	SDL_Quit();
+	
+	if (fd_interface)
+	{
+		fd_interface(FDP_DESTROY, (void*)0);
+	}
+	fsClose();
 
-	return 1;
+	return 0;
 }
+
+
+
