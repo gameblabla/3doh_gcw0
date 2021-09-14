@@ -292,7 +292,7 @@ got_error:
 					print_string("BIOS file INVALID", 0xFFFF, 0, 0, 15, screen->pixels);
 					print_string("or DOES NOT EXIST !", 0xFFFF, 0, 0, 30, screen->pixels);
 							
-					print_string("Make sure to put the bios file...", 0xFFFF, 0, 0, 80, screen->pixels);
+					print_string("Make sure to put the bios file in", 0xFFFF, 0, 0, 80, screen->pixels);
 					print_string(home, 0xFFFF, 0, 0, 100, screen->pixels);
 					print_string("as bios.bin, lowercase.", 0xFFFF, 0, 0, 120, screen->pixels);
 				break;
