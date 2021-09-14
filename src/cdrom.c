@@ -21,15 +21,13 @@ FILE *fcdrom;
 static int cd_sector_size;
 static int cd_sector_offset;
 
-static void fsDetectCDFormat(const char *path)
+static void fsDetectCDFormat(const char *path, cueFile *cue_file)
 {
    CD_format cd_format;
-   cueFile *cue_file = cue_get(path);
    if (cue_file)
    {
       cd_format = cue_file->cd_format;
       //printf("[4DO]: File format from cue file resolved to %s\n", cue_get_cd_format_name(cd_format));
-      free(cue_file);
    }
    else
    {
@@ -94,36 +92,18 @@ void fsReadBios(char *biosFile, void *prom)
 
 int fsOpenIso(char *path)
 {
-	uint_fast8_t i;
-	char cue_path_base[256];
-	const char *exts[] = {".cue", ".CUE"};
-	const char *exts_bin[] = {".bin", ".BIN"};
-	
-	if (!path) return 0;
-	
-	/* Detect if input file is .cue or .CUE and if so, change it to bin */
-	for(i=0;i<2;i++)
-	{
-		if (strcmp(strrchr(path, '.'), exts[i]) == 0)
-		{
-			strncpy(cue_path_base, path, 256);
-			char *last_dot = strrchr(cue_path_base, '.');
-			if (last_dot == NULL) return 0;
-			*(last_dot) = '\0';
-			strcpy(path, cue_path_base);
-			strcat(path, exts_bin[i]);
-			break;
-		}
-	}
+   cueFile *cue_file = cue_get(path);
+   fsDetectCDFormat(path, cue_file);
 
-	fcdrom = fopen(path, "rb");
-	if (!fcdrom)
-	{
-		printf("ERROR: can't load game file, exiting\n");
-		return 0;
-	}
-	fsDetectCDFormat(path);
-	return 1;
+   const char *cd_image_path = cue_is_cue_path(path) ? cue_file->cd_image : path;
+   fcdrom = fopen(cd_image_path, "rb");
+
+   free(cue_file);
+
+   if(!fcdrom)
+      return 0;
+
+   return 1;
 }
 
 int fsCloseIso()

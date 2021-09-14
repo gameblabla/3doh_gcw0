@@ -12,9 +12,11 @@ typedef enum {MODE1_2048, MODE1_2352, MODE2_2352, CUE_MODE_UNKNOWN} CD_format;
 
 typedef struct {
     CD_format cd_format;
+    char *    cd_image;
 } cueFile;
 
-cueFile *cue_get(const char *path);
-const char *cue_get_cd_format_name(CD_format cd_format);
+extern cueFile *cue_get(const char *path);
+extern const char *cue_get_cd_format_name(CD_format cd_format);
+extern int cue_is_cue_path(const char *path);
 
 #endif
