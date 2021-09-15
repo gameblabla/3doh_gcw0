@@ -36,7 +36,9 @@
 extern "C" {
 #endif
 
+#ifndef DONTPACK
 #pragma pack(push,1)
+#endif
 struct ARM_CoreState {
 	//console memories------------------------
 	uint8_t *Ram;   //[RAMSIZE];
@@ -58,7 +60,9 @@ struct ARM_CoreState {
 	bool SecondROM;         //ROM selector
 	bool MAS_Access_Exept;  //memory exceptions
 };
+#ifndef DONTPACK
 #pragma pack(pop)
+#endif
 
 extern struct ARM_CoreState arm;
 

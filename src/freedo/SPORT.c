@@ -59,7 +59,7 @@ void _sport_Init(uint8_t *vmem)
 	VRAM = vmem;
 }
 
-int _sport_SetSource(uint32_t index) //take source for SPORT
+uint32_t _sport_SetSource(uint32_t index) //take source for SPORT
 {
 	gSPORTSOURCE = (index << 7);
 	return 0;

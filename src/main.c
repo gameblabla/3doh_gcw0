@@ -34,10 +34,10 @@ char* pNVRam;
 _ext_Interface fd_interface;*/
 int onsector = 0;
 char biosFile[128];
-char imageFile[128];
-char configFile[128];
+static char imageFile[128];
+//static char configFile[128];
 
-unsigned char __temporalfixes;
+static unsigned char __temporalfixes;
 
 int initEmu();
 
@@ -144,7 +144,7 @@ int main(int argc, char *argv[])
 #ifndef _WIN32
 	snprintf(biosFile, sizeof(biosFile), "%s/.3doh/bios.bin", getenv("HOME"));
 	//snprintf(configFile, sizeof(configFile), "%s/.3doh/config.ini", getenv("HOME"));
-	snprintf(imageFile, sizeof(imageFile), argv[1]);
+	snprintf(imageFile, sizeof(imageFile), "%s", argv[1]);
 #else
 	strcpy(biosFile, "bios.bin");
 	strcpy(imageFile, argv[1]);
@@ -231,11 +231,7 @@ got_error:
 				case 1:
 					print_string("ISO file INVALID or", 0xFFFF, 0, 0, 15, screen->pixels);
 					print_string("can't be read, does not exist...", 0xFFFF, 0, 0, 30, screen->pixels);
-					if (imageFile)
-					{
-						print_string(imageFile, 0xFFFF, 0, 0, 50, screen->pixels);
-					}
-							
+					print_string(imageFile, 0xFFFF, 0, 0, 50, screen->pixels);	
 					print_string("Make sure to use iso or", 0xFFFF, 0, 0, 80, screen->pixels);
 					print_string("iso/cue dumps !", 0xFFFF, 0, 0, 100, screen->pixels);
 				break;

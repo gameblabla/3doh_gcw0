@@ -42,6 +42,24 @@ void toggleFullscreen()
 
 int videoClose()
 {
+	if (frame)
+	{
+		free(frame);
+		frame = NULL;
+	}
+	
+	if (screen)
+	{
+		SDL_FreeSurface(screen);
+		screen = NULL;
+	}
+	#ifdef SCALING
+	if (rl_screen)
+	{
+		SDL_FreeSurface(rl_screen);
+		rl_screen = NULL;
+	}
+	#endif
 	SDL_QuitSubSystem(SDL_INIT_VIDEO);
 	return 0;
 }

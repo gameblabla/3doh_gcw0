@@ -62,7 +62,9 @@ int  OperandLoaderNWB(void);
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
+#ifndef DONTPACK
 #pragma pack(push,1)
+#endif
 
 struct CIFTAG {
 	unsigned int BCH_ADDR        : 10;
@@ -212,7 +214,9 @@ struct DSPDatum {
 	bool CPUSupply[16];
 };
 
+#ifndef DONTPACK
 #pragma pack(pop)
+#endif
 
 static struct DSPDatum dsp;
 
@@ -1089,7 +1093,6 @@ void  OperandLoader(int Requests)
 			if (operand.r2of.WB1)
 				GWRITEBACK = flags.WRITEBACK;
 		}
-		;
 
 	} while (Operands < Requests);
 

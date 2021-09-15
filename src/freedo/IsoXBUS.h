@@ -128,7 +128,10 @@ enum MEI_CDROM_Error_Codes {
 extern "C" {
 #endif
 
+#ifndef DONTPACK
 #pragma pack(push,1)
+#endif
+
 //drive specific
 //disc data
 struct TOCEntry {

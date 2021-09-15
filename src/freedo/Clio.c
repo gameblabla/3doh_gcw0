@@ -43,7 +43,9 @@ void HandleDMA(uint32_t val);
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
 
+#ifndef DONTPACK
 #pragma pack(push,1)
+#endif
 struct FIFOt {
 
 	uint32_t StartAdr;
@@ -61,7 +63,9 @@ struct CLIODatum {
 	struct FIFOt FIFOI[13];
 	struct FIFOt FIFOO[4];
 };
+#ifndef DONTPACK
 #pragma pack(pop)
+#endif
 
 static uint32_t * Mregs;
 

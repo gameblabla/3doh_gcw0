@@ -31,7 +31,7 @@ static void fsDetectCDFormat(const char *path, cueFile *cue_file)
    }
    else
    {
-      int size = 0;
+      size_t size = 0;
       FILE *fp = fopen(path, "r");
       if (fp) {
          fseek(fp, 0L, SEEK_END);
@@ -124,25 +124,18 @@ int fsReadBlock(void *buffer, int sector)
 	return 1;
 }
 
-char *fsReadSize()
-{
-	char *buffer = (char*)malloc(sizeof(char) * 4);
-
-	rewind(fcdrom);
-	fseek(fcdrom, 80 + cd_sector_offset, SEEK_SET);
-	fread(buffer, 1, 4, fcdrom);
-	rewind(fcdrom);
-	return buffer;
-}
-
 unsigned int fsReadDiscSize()
 {
 	unsigned int size;
 	/*char sectorZero[2048];*/
 	unsigned int temp;
-	char *ssize;
+	char ssize[4];
+	
+	rewind(fcdrom);
+	fseek(fcdrom, 80 + cd_sector_offset, SEEK_SET);
+	fread(ssize, 1, 4, fcdrom);
+	rewind(fcdrom);
 
-	ssize = fsReadSize();
 	memcpy(&temp, ssize, 4);
 	size = (temp & 0x000000FFU) << 24 | (temp & 0x0000FF00U) << 8 |
 	       (temp & 0x00FF0000U) >> 8 | (temp & 0xFF000000U) >> 24;

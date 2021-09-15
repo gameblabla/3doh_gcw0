@@ -50,7 +50,9 @@
 #define VDL_BLUEONLY    0x20000000
 
 
+#ifndef DONTPACK
 #pragma pack(push,1)
+#endif
 
 struct cdmaw {
 	uint32_t lines : 9;     //0-8
@@ -85,7 +87,9 @@ struct VDLDatum {
 	union CDMW CLUTDMA;
 	int linedelay;
 };
+#ifndef DONTPACK
 #pragma pack(pop)
+#endif
 
 static struct VDLDatum vdl;
 static uint8_t *vram;
@@ -135,7 +139,7 @@ bool doloadclut = false;
 
 static INLINE void VDLExec(void)
 {
-	int i;
+	uint32_t i;
 	uint32_t NEXTVDL;
 	uint8_t ifgnorflag = 0;
 	uint32_t tmp = vmreadw(CURRENTVDL);
@@ -207,10 +211,10 @@ static INLINE uint32_t VRAMOffEval(uint32_t addr, uint32_t line)
 	return ((((~addr) & 2) << 18) + ((addr >> 2) << 1) + 1024 * 512 * line);
 }
 
-void _vdl_DoLineNew(int line2x, struct VDLFrame *frame)
+void _vdl_DoLineNew(uint32_t line2x, struct VDLFrame *frame)
 {
-	int y, i;
-	int line = line2x & 0x7ff;
+	uint32_t y, i;
+	uint32_t line = line2x & 0x7ff;
 
 	if (line == 0) {
 		doloadclut = true;
@@ -224,7 +228,8 @@ void _vdl_DoLineNew(int line2x, struct VDLFrame *frame)
 	if (linedelay == 0 /*&& doloadclut*/)
 		VDLExec();
 
-	if ((y >= 0) && (y < 240)) { // 256???
+	if (y < 240) // 256???
+	{
 		if (CLUTDMA.dmaw.enadma) {
 			{
 				uint16_t *dst;

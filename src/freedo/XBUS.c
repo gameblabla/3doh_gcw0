@@ -29,7 +29,9 @@
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
+#ifndef DONTPACK
 #pragma pack(push,1)
+#endif
 
 struct XBUSDatum {
 	uint8_t XBSEL;
@@ -41,7 +43,9 @@ struct XBUSDatum {
 	uint8_t CmdF[7];
 	uint8_t CmdPtrF;
 };
+#ifndef DONTPACK
 #pragma pack(pop)
+#endif
 
 #define XBSEL xbus.XBSEL
 #define XBSELH xbus.XBSELH

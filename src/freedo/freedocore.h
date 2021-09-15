@@ -27,7 +27,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifndef DONTPACK
 #pragma pack(push,1)
+#endif
 
 struct VDLLine {
 	uint16_t line[320 * 4];
@@ -65,7 +67,9 @@ struct GetFrameBitmapParams {
 	int resultingHeight;
 };
 
+#ifndef DONTPACK
 #pragma pack(pop)
+#endif
 
 #define EXT_READ_ROMS           1
 #define EXT_READ_NVRAM          2

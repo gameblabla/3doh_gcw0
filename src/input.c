@@ -337,9 +337,9 @@ int CheckDownButton(int deviceNumber, int button)
 	else return 0;
 }
 
-char CalculateDeviceLowByte(int deviceNumber)
+static unsigned char CalculateDeviceLowByte(int deviceNumber)
 {
-	char returnValue = 0;
+	unsigned char returnValue = 0;
 
 	returnValue |= 0x01 & 0;        // unknown
 	returnValue |= 0x02 & 0;        // unknown
@@ -353,9 +353,9 @@ char CalculateDeviceLowByte(int deviceNumber)
 	return returnValue;
 }
 
-char CalculateDeviceHighByte(int deviceNumber)
+static unsigned char CalculateDeviceHighByte(int deviceNumber)
 {
-	char returnValue = 0;
+	unsigned char returnValue = 0;
 
 	returnValue |= CheckDownButton(deviceNumber, INPUTBUTTONA)     ? (char)0x01 : (char)0;
 	returnValue |= CheckDownButton(deviceNumber, INPUTBUTTONLEFT)  ? (char)0x02 : (char)0;

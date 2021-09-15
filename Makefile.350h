@@ -3,10 +3,10 @@ TARGET = 3doh
 PROFILE = APPLY
 
 CFLAGS  = -Ofast -fdata-sections -ffunction-sections -mno-abicalls -mno-fp-exceptions -mno-check-zero-division -mframe-header-opt -fno-common -flto -fsingle-precision-constant -march=mips32r2 -mtune=mips32r2 -fno-PIC
-CFLAGS	+= -fno-math-errno -fgcse-las -fgcse-sm -fmerge-all-constants -fno-ident -fno-stack-protector -fomit-frame-pointer -fno-unwind-tables -fno-asynchronous-unwind-tables -freorder-functions -freorder-blocks 
+CFLAGS	+= -fno-math-errno -fno-stack-protector -fomit-frame-pointer -freorder-functions -freorder-blocks 
 CFLAGS	+= -Isrc -Isrc/freedo -mno-shared  -std=gnu99
 
-CFLAGS  += -DHLE_SWI
+CFLAGS  += -DHLE_SWI -DDONTPACK
 
 LDFLAGS = -nodefaultlibs -lc -lgcc -lSDL -lasound -Wl,-z,norelro -Wl,--hash-style=gnu -Wl,--build-id=none -Wl,-O1,--sort-common,--as-needed,--gc-sections -no-pie -flto -s
 
@@ -49,7 +49,7 @@ all: $(TARGET)
 
 
 $(TARGET): $(OBJS)
-	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(OBJS) -o $(TARGET) $(LDFLAGS)
 
 
 %.o: %.c

@@ -590,7 +590,7 @@ void _arm_Destroy(void)
 
 void _arm_Reset(void)
 {
-	int i;
+	uint_fast8_t i;
 
 	cpu->Reset();
 
@@ -872,7 +872,7 @@ static void decode_swi(const uint32_t op_)
 	return decode_swi_lle();
 }
 #else
-static void decode_swi(uint32_t i)
+static void decode_swi(void)
 {
 
 	(void)i;
@@ -1066,7 +1066,7 @@ static INLINE uint32_t calcbits(uint32_t num)
 	return 0;
 }
 
-const bool is_logic[] = {
+static const bool is_logic[] = {
 	true,  true,  false, false,
 	false, false, false, false,
 	true,  true,  false, false,
@@ -1457,7 +1457,7 @@ void arm60_ALU(unsigned long cmd)
 
 int _arm_Execute(void)
 {
-	unsigned long cmd;
+	uint32_t cmd;
 
 	cmd = mreadw(REG_PC);
 
@@ -1487,7 +1487,11 @@ int _arm_Execute(void)
 		} else if ((cmd & ARM_COP_MASK) == ARM_COP_SIGN) {	/* Coprocessor */
 			arm60_COPRO(/*cmd*/);
 		} else if ((cmd & ARM_SWI_MASK) == ARM_SWI_SIGN) {	/* Software interrupt */
+			#ifdef HLE_SWI
 			decode_swi(cmd);
+			#else
+			decode_swi(); /* Gameblabla */
+			#endif
 		} else {						/* Undefined */
 			SPSR[arm_mode_table[0x1b]] = CPSR;
 			SETI(1);
@@ -1609,7 +1613,7 @@ uint32_t mreadw(uint32_t addr)
 	//to do -- wipe out all HW
 	//to do -- add abort (may be in HW)
 	//to do -- proper loging
-	int index;
+	uint32_t index;
 
 	addr &= ~3;
 

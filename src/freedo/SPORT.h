@@ -34,7 +34,7 @@ extern "C" {
 
 void _sport_Init(uint8_t *vmem);
 
-int _sport_SetSource(uint32_t index);
+uint32_t _sport_SetSource(uint32_t index);
 
 void _sport_WriteAccess(uint32_t index, uint32_t mask);
 

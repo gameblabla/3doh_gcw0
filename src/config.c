@@ -69,7 +69,7 @@ int configReadInt(char *section, char *name)
 	return 0;
 }
 
-
+/*
 char *configReadString(char *section, char *name)
 {
 	char *value;
@@ -114,6 +114,7 @@ char *configReadString(char *section, char *name)
 	rewind(config);
 	return "JOY_BUTTON0";
 }
+*/
 
 
 void configWrite()

@@ -32,7 +32,9 @@
 #include "IsoXBUS.h"
 #include "fs.h"
 
+#ifndef DONTPACK
 #pragma pack(pop)
+#endif
 
 void LBA2MSF(struct cdrom_Device *cd)
 {

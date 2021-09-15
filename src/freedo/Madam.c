@@ -222,7 +222,9 @@ extern int speedfixes;
 #define PPMPC_2D_2  0x00000001
 
 
+#ifndef DONTPACK
 #pragma pack(push,1)
+#endif
 
 struct cp1btag {
 	uint16_t c : 1;
@@ -316,11 +318,15 @@ union   PXC {
 	unsigned int raw;
 };
 
+#ifndef DONTPACK
 #pragma pack(pop)
+#endif
 
 
 //*******************************************
+#ifndef DONTPACK
 #pragma pack(push,1)
+#endif
 struct MADAMDatum {
 	uint32_t mregs[2048 + 64];
 	uint16_t PLUT[32];
@@ -329,7 +335,9 @@ struct MADAMDatum {
 	int32_t WMOD;
 	unsigned int _madam_FSM;
 };
+#ifndef DONTPACK
 #pragma pack(pop)
+#endif
 static struct MADAMDatum madam;
 
 uint32_t Get_madam_FSM(void)
@@ -1223,7 +1231,7 @@ unsigned int  readPLUTDATA(unsigned int offset)
 	return ((uint16_t*)PAL_EXP)[((offset^2)>>1)];
 }
 
-unsigned int  PDEC(unsigned int pixel, uint16_t * amv)
+static uint16_t PDEC(uint16_t pixel, uint16_t * amv)
 {
 	union pdeco pix1;
 	uint16_t resamv, pres;
