@@ -1,0 +1,27 @@
+PRGNAME     = index.html
+CC			= emcc
+RESOURCE_FOLDER = data/
+
+SRCDIR		= src/freedo src
+VPATH		= $(SRCDIR)
+SRC_C		= $(foreach dir, $(SRCDIR), $(wildcard $(dir)/*.c))
+OBJ_C		= $(notdir $(patsubst %.c, %.o, $(SRC_C)))
+OBJS		= $(OBJ_C)
+
+CFLAGS		= -O0 -g3 -I. -Isrc/freedo -Isrc -DHLE_SWI -DDONTPACK
+
+CXXFLAGS = $(CFLAGS)
+
+LDFLAGS     = 
+LDFLAGS		+= -s ENVIRONMENT=web --closure 1 -sALLOW_MEMORY_GROWTH=1 -s TOTAL_MEMORY=1000mb -s WASM=1
+
+
+# Rules to make executable
+$(PRGNAME): $(OBJS)  
+	$(CC) $(CFLAGS)  -o $(PRGNAME) $^ $(LDFLAGS) --preload-file $(RESOURCE_FOLDER) --use-preload-plugins
+
+$(OBJ_C) : %.o : %.c
+	$(CC) $(CFLAGS) -std=gnu99 -c -o $@ $<
+
+clean:
+	rm -f $(PRGNAME) src/freedo/*.o src/*.o *.o *.webm *.js *.html

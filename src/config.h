@@ -15,8 +15,9 @@
     along with 3d'oh.  If not, see <http://www.gnu.org/licenses/>.
 
  */
-
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 void configOpen(char *file);
 void configClose();
 int configReadInt(char *section, char *name);

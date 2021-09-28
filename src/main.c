@@ -21,13 +21,18 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <SDL/SDL.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include "freedocore.h"
 #include "common.h"
 #include "timer.h"
 #include "tinyfps.h"
 #include "vdlp.h"
 #include "_3do_sys.h"
+#ifndef __EMSCRIPTEN__
 #include "font/font_drawing.h"
+#endif
 
 char* pNVRam;
 /*extern _ext_Interface io_interface;
@@ -103,15 +108,36 @@ void loadRom1(void *prom)
 }
 
 
-void readConfiguration(char* config)
+static int quit = 0;
+
+static inline void mainloop(void)
 {
-	configOpen(config);
-	configClose();
+	uint32_t line;
+	extern struct VDLFrame *frame;
+
+	_3do_Frame((struct VDLFrame*)frame, true);
+	line = 0;
+	#if defined(__EMSCRIPTEN__)
+	for(line = 0; line < 256; line++)
+	{
+		_vdl_DoLineNew(line, (struct VDLFrame*)frame);
+	}
+	#else
+	while (line < 256) _vdl_DoLineNew(line++, (struct VDLFrame*)frame);
+	#endif
+
+	videoFlip();
+
+	quit = inputQuit();
+
+	/* Framerate control */
+	#ifndef SDL_TRIPLEBUF
+	synchronize_us();
+	#endif
 }
 
 int main(int argc, char *argv[])
 {
-	uint32_t line;
 	extern SDL_Surface *screen;
 #ifdef SCALING
 	extern SDL_Surface *rl_screen;
@@ -119,14 +145,15 @@ int main(int argc, char *argv[])
 	SDL_Event event;
 	char home[128];
 	int error = 0;
-	int quit = 0;
 	int waitfps;
 	FILE* fp;
 
 	/* Create Display before in case it crashes before that */
 	videoInit();
 
-#ifndef _WIN32
+#if defined(__EMSCRIPTEN__)
+
+#elif !defined(_WIN32)
 	snprintf(home, sizeof(home), "%s/.3doh", getenv("HOME"));
 	if (access( home, F_OK ) == -1) {
 		printf("Creating home directory...\n");
@@ -141,13 +168,16 @@ int main(int argc, char *argv[])
 	}
 #endif
 
-#ifndef _WIN32
+#if defined(__EMSCRIPTEN__)
+	snprintf(biosFile, sizeof(biosFile), "data/bios.bin");
+	snprintf(imageFile, sizeof(imageFile), "data/game.iso");
+#elif defined(_WIN32)
+	strcpy(biosFile, "bios.bin");
+	strcpy(imageFile, argv[1]);
+#else
 	snprintf(biosFile, sizeof(biosFile), "%s/.3doh/bios.bin", getenv("HOME"));
 	//snprintf(configFile, sizeof(configFile), "%s/.3doh/config.ini", getenv("HOME"));
 	snprintf(imageFile, sizeof(imageFile), "%s", argv[1]);
-#else
-	strcpy(biosFile, "bios.bin");
-	strcpy(imageFile, argv[1]);
 #endif
 	fp = fopen(biosFile, "rb");
 	if (!fp)
@@ -179,24 +209,19 @@ int main(int argc, char *argv[])
 
 	_3do_Init();
 
+#ifdef __EMSCRIPTEN__
+	printf("Emulation started\n");
+	emscripten_set_main_loop(mainloop, 0, 1);
+#else
 	while (!quit) {
-		extern struct VDLFrame *frame;
-
-		_3do_Frame((struct VDLFrame*)frame, true);
-		line = 0;
-		while (line < 256) _vdl_DoLineNew(line++, (struct VDLFrame*)frame);
-
-		videoFlip();
-
-		quit = inputQuit();
-
-		/* Framerate control */
-		#ifndef SDL_TRIPLEBUF
-		synchronize_us();
-		#endif
+		mainloop();
 	}
+#endif
 
 got_error:
+
+/* That loop causes it to just shit itself */
+#ifndef __EMSCRIPTEN__
 	/* Jump here in case of error */
 	if (error > 0)
 	{
@@ -250,10 +275,20 @@ got_error:
 #else
 			SDL_Flip(screen);
 #endif
-			SDL_Delay(1);
 		}
 
 	}
+#else
+			switch(error)
+			{
+				case 1:
+					printf("ISO file INVALID\n");
+				break;
+				case 2:
+					printf("BIOS file INVALID %s\n", biosFile);
+				break;
+			}
+#endif
 
 	/* Close everything and return */
 	inputClose();

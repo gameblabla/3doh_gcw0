@@ -875,7 +875,6 @@ static void decode_swi(const uint32_t op_)
 static void decode_swi(void)
 {
 
-	(void)i;
 	SPSR[arm_mode_table[0x13]] = CPSR;
 
 	SETI(1);

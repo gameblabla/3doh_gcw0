@@ -1,3 +1,6 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "freedocore.h"
 #include "video.h"
 #include "frame.h"
@@ -10,7 +13,9 @@ SDL_Surface *rl_screen;
 #endif
 struct VDLFrame *frame;
 
-#ifdef SDL_TRIPLEBUF
+#if defined(__EMSCRIPTEN__)
+#define flags SDL_SWSURFACE
+#elif defined(SDL_TRIPLEBUF)
 #define flags SDL_HWSURFACE | SDL_TRIPLEBUF
 #else
 #define flags SDL_HWSURFACE
@@ -20,12 +25,16 @@ int videoInit(void)
 {
 	frame = (struct VDLFrame*)malloc(sizeof(struct VDLFrame));
 
+	#ifndef __EMSCRIPTEN__
 	if ((SDL_Init( SDL_INIT_VIDEO )) < 0 ) {
 		printf("ERROR: can't init video\n");
 		return 0;
 	}
-
 	SDL_ShowCursor(0);
+	#else
+	SDL_Init( SDL_INIT_VIDEO | SDL_INIT_AUDIO);
+	#endif
+	
 	#ifdef SCALING
 	rl_screen = SDL_SetVideoMode(0, 0, 16, flags);
 	screen = SDL_CreateRGBSurface(SDL_HWSURFACE, 320, 240, 16, 0,0,0,0);
@@ -37,7 +46,9 @@ int videoInit(void)
 
 void toggleFullscreen()
 {
+	#ifndef __EMSCRIPTEN__
 	SDL_WM_ToggleFullScreen(screen);
+	#endif
 }
 
 int videoClose()

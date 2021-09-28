@@ -15,6 +15,7 @@
     along with 3d'oh.  If not, see <http://www.gnu.org/licenses/>.
 
  */
+ /*
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,7 +34,7 @@ void configOpen(char *file)
 
 void configClose()
 {
-	fclose(config);
+	//fclose(config);
 }
 
 int configReadInt(char *section, char *name)
@@ -69,7 +70,6 @@ int configReadInt(char *section, char *name)
 	return 0;
 }
 
-/*
 char *configReadString(char *section, char *name)
 {
 	char *value;
@@ -114,7 +114,7 @@ char *configReadString(char *section, char *name)
 	rewind(config);
 	return "JOY_BUTTON0";
 }
-*/
+
 
 
 void configWrite()
@@ -124,4 +124,4 @@ void configWrite()
 
 void configInitDefaults()
 {
-}
+}*/

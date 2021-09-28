@@ -102,7 +102,9 @@ void soundClose()
 	buffered_bytes = SOUND_BUFFER_SIZE;
 	SDL_CondSignal(sound_cv);
 	SDL_UnlockMutex(sound_mutex);
+	#ifndef __EMSCRIPTEN__
 	SDL_Delay(100);
+	#endif
 
 	SDL_DestroyCond(sound_cv);
 	SDL_DestroyMutex(sound_mutex);

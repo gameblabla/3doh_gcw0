@@ -1055,7 +1055,7 @@ void* _xbplug_MainDevice(int proc, void* data)
 		memcpy(data, &isodrive, sizeof(struct cdrom_Device));
 		break;
 	case XBP_SET_SAVEDATA:
-		memcpy(&isodrive, data, sizeof(struct cdrom_Device));
+		//memcpy(&isodrive, data, sizeof(struct cdrom_Device));
 		return (void*)1;
 	}
 	;
