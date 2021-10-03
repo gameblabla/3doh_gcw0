@@ -18,6 +18,37 @@ int usekb = 0;
 int isexit = 0;
 int fullscreen = 0;
 
+#ifdef FUNKEY
+#define _3DO_LEFT SDLK_l
+#define _3DO_RIGHT SDLK_r
+#define _3DO_UP SDLK_u
+#define _3DO_DOWN SDLK_d
+
+#define _3DO_B SDLK_b
+#define _3DO_A SDLK_a
+#define _3DO_X SDLK_y
+#define _3DO_C SDLK_x
+
+#define _3DO_R SDLK_n
+#define _3DO_L SDLK_m
+#define _3DO_P SDLK_s
+#define _3DO_EXIT SDLK_k
+#else
+#define _3DO_LEFT SDLK_LEFT
+#define _3DO_RIGHT SDLK_RIGHT
+#define _3DO_UP SDLK_UP
+#define _3DO_DOWN SDLK_DOWN
+
+#define _3DO_C SDLK_LSHIFT
+#define _3DO_B SDLK_LALT
+#define _3DO_A SDLK_LCTRL
+#define _3DO_R SDLK_BACKSPACE
+#define _3DO_X SDLK_SPACE
+#define_ 3DO_P SDLK_RETURN
+#define _3DO_L SDLK_TAB
+#define _3DO_EXIT SDLK_ESCAPE
+#endif
+
 
 int inputMapButton(char *button)
 {
@@ -230,41 +261,41 @@ void inputPoll_internal()
 
 		case SDL_KEYDOWN:
 			switch ( eventjoy.key.keysym.sym ) {
-			case SDLK_LEFT:
+			case _3DO_LEFT:
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONRIGHT;
 				internal_input_state[eventjoy.jbutton.which].buttons |= INPUTBUTTONLEFT;
 				break;
-			case SDLK_RIGHT:
+			case _3DO_RIGHT:
 				internal_input_state[eventjoy.jbutton.which].buttons |= INPUTBUTTONRIGHT;
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONLEFT;
 				break;
-			case SDLK_UP:
+			case _3DO_UP:
 				internal_input_state[eventjoy.jbutton.which].buttons |= INPUTBUTTONUP;
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONDOWN;
 				break;
-			case SDLK_DOWN:
+			case _3DO_DOWN:
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONUP;
 				internal_input_state[eventjoy.jbutton.which].buttons |= INPUTBUTTONDOWN;
 				break;
-			case SDLK_LSHIFT:
+			case _3DO_C:
 				internal_input_state[eventjoy.jbutton.which].buttons |= INPUTBUTTONC;
 				break;
-			case SDLK_LALT:
+			case _3DO_B:
 				internal_input_state[eventjoy.jbutton.which].buttons |= INPUTBUTTONB;
 				break;
-			case SDLK_LCTRL:
+			case _3DO_A:
 				internal_input_state[eventjoy.jbutton.which].buttons |= INPUTBUTTONA;
 				break;
-			case SDLK_BACKSPACE:
+			case _3DO_R:
 				internal_input_state[eventjoy.jbutton.which].buttons |= INPUTBUTTONR;
 				break;
-			case SDLK_SPACE:
+			case _3DO_X:
 				internal_input_state[eventjoy.jbutton.which].buttons |= INPUTBUTTONX;
 				break;
-			case SDLK_RETURN:
+			case _3DO_P:
 				internal_input_state[eventjoy.jbutton.which].buttons |= INPUTBUTTONP;
 				break;
-			case SDLK_TAB:
+			case _3DO_L:
 				internal_input_state[eventjoy.jbutton.which].buttons |= INPUTBUTTONL;
 				break;
 			default:
@@ -274,44 +305,44 @@ void inputPoll_internal()
 
 		case SDL_KEYUP:
 			switch ( eventjoy.key.keysym.sym ) {
-			case SDLK_LEFT:
+			case _3DO_LEFT:
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONRIGHT;
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONLEFT;
 				break;
-			case SDLK_RIGHT:
+			case _3DO_RIGHT:
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONRIGHT;
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONLEFT;
 				break;
-			case SDLK_UP:
+			case _3DO_UP:
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONUP;
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONDOWN;
 				break;
-			case SDLK_DOWN:
+			case _3DO_DOWN:
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONUP;
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONDOWN;
 				break;
-			case SDLK_LSHIFT:
+			case _3DO_C:
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONC;
 				break;
-			case SDLK_LALT:
+			case _3DO_B:
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONB;
 				break;
-			case SDLK_LCTRL:
+			case _3DO_A:
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONA;
 				break;
-			case SDLK_BACKSPACE:
+			case _3DO_R:
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONR;
 				break;
-			case SDLK_SPACE:
+			case _3DO_X:
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONX;
 				break;
-			case SDLK_RETURN:
+			case _3DO_P:
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONP;
 				break;
-			case SDLK_TAB:
+			case _3DO_L:
 				internal_input_state[eventjoy.jbutton.which].buttons &= ~INPUTBUTTONL;
 				break;
-			case SDLK_ESCAPE:
+			case _3DO_EXIT:
 			case SDLK_HOME:
 				isexit = 1;
 				break;

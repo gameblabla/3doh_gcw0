@@ -1,0 +1,59 @@
+CC = /opt/funkey-toolchain-shared/bin/arm-linux-gcc
+TARGET = 3doh
+PROFILE = APPLY
+
+CFLAGS  = -Ofast -fdata-sections -ffunction-sections -fno-common -flto -fsingle-precision-constant -fno-PIC
+CFLAGS	+= -march=armv7-a+neon-vfpv4 -mtune=cortex-a7 -mfpu=neon-vfpv4
+CFLAGS	+= -fno-math-errno
+CFLAGS	+= -Isrc -Isrc/freedo
+CFLAGS	+= -DSCALING -DFUNKEY -DDONTPACK -DHLE_SWI
+
+LDFLAGS = -nodefaultlibs -lc -lgcc -lSDL -lasound -Wl,-z,norelro -Wl,--hash-style=gnu -Wl,--build-id=none -Wl,-O1,--sort-common,--as-needed,--gc-sections -no-pie -flto -s
+ifeq ($(PROFILE), YES)
+CFLAGS	+= -fprofile-generate=/mnt/3do_profile
+LDFLAGS += -lgcov
+else ifeq ($(PROFILE), APPLY)
+CFLAGS	+= -fprofile-use=$(PWD)
+LDFLAGS	+= -nodefaultlibs
+else
+LDFLAGS += -nodefaultlibs
+endif
+
+OBJS = \
+	src/freedo/arm.o \
+	src/freedo/DiagPort.o\
+	src/freedo/quarz.o\
+	src/freedo/Clio.o \
+	src/freedo/frame.o \
+	src/freedo/Madam.o \
+	src/freedo/vdlp.o \
+	src/freedo/_3do_sys.o \
+	src/freedo/bitop.o \
+	src/freedo/DSP.o \
+	src/freedo/Iso.o \
+	src/freedo/SPORT.o \
+	src/freedo/XBUS.o \
+	src/freedo/freedo_fixedpoint_math.o \
+	src/video.o \
+	src/sound.o \
+	src/cdrom.o \
+	src/timer.o \
+	src/input.o \
+	src/config.o \
+	src/cuefile.o \
+	src/font/font_drawing.o \
+	src/main.o
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+%.o: %.cpp
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -r $(OBJS) $(TARGET)

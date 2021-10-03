@@ -239,6 +239,8 @@ got_error:
 							case SDLK_RCTRL:
 							case SDLK_RETURN:
 							case SDLK_ESCAPE:
+							case SDLK_a:
+							case SDLK_s:
 								quit = 1;
 							break;
 							default:

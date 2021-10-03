@@ -17,6 +17,9 @@ void _frame_Init(void)
 void Get_Frame_Bitmap(struct VDLFrame* sourceFrame, void* destinationBitmap, uint_fast32_t copyWidth, uint_fast32_t copyHeight)
 {
 	uint_fast32_t i, pix;
+#ifdef _32BPP
+
+#else
 	int16_t *destPtr = (int16_t*)destinationBitmap;
 	for (i = 0; i < copyHeight; i++)
 	{
@@ -50,4 +53,5 @@ void Get_Frame_Bitmap(struct VDLFrame* sourceFrame, void* destinationBitmap, uin
 			srcPtr++;
 		}
 	}
+#endif
 }

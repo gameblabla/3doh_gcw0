@@ -1,8 +1,8 @@
-CC = clang -Weverything
-TARGET = 3doh
-CFLAGS = -O2 -std=gnu99 -pg -DSCALING -DHLE_SWI -DDONTPACK
+CC = i686-w64-mingw32-gcc
+TARGET = 3doh.exe
+CFLAGS = -march=pentium -Ofast -flto -fdata-sections -ffunction-sections -D_WIN32
 CFLAGS += -Isrc -Isrc/freedo
-LDFLAGS= -lSDL -lm
+LDFLAGS= -static -lmingw32 -lSDLmain -lSDL -ldxguid -mwindows -lwinmm -lm -s -Wl,-O1,--sort-common,--as-needed,--gc-sections -no-pie -flto -s
 
 OBJS = \
 	src/freedo/arm.o \
@@ -18,15 +18,12 @@ OBJS = \
 	src/freedo/Iso.o \
 	src/freedo/SPORT.o \
 	src/freedo/XBUS.o \
-	src/freedo/freedo_fixedpoint_math.o \
 	src/video.o \
 	src/sound.o \
 	src/cdrom.o \
 	src/timer.o \
 	src/input.o \
 	src/config.o \
-	src/cuefile.o \
-	src/font/font_drawing.o \
 	src/main.o
 
 all: $(TARGET)
