@@ -6,6 +6,8 @@
 #include "frame.h"
 #include "timer.h"
 #include "tinyfps.h"
+#include "freedo/vdlp.h"
+#include "freedo/_3do_sys.h"
 
 SDL_Surface *screen;
 #ifdef SCALING
@@ -19,6 +21,12 @@ struct VDLFrame *frame;
 #define flags SDL_HWSURFACE | SDL_TRIPLEBUF
 #else
 #define flags SDL_HWSURFACE
+#endif
+
+#if BPP_TYPE == 32
+#define BPP 32
+#else
+#define BPP 16
 #endif
 
 int videoInit(void)
@@ -35,23 +43,25 @@ int videoInit(void)
 	SDL_Init( SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 	#endif
 	
+	printf("Bitdepth is %d\n", BPP);
+	
 	#ifdef SCALING
-	rl_screen = SDL_SetVideoMode(0, 0, 16, flags);
-	screen = SDL_CreateRGBSurface(SDL_HWSURFACE, 320, 240, 16, 0,0,0,0);
+	rl_screen = SDL_SetVideoMode(0, 0, BPP, flags);
+	screen = SDL_CreateRGBSurface(SDL_HWSURFACE, 320, 240, BPP, 0,0,0,0);
 	#else
-	screen = SDL_SetVideoMode(SCREEN_WIDTH, SCREEN_HEIGHT, 16, flags);
+	screen = SDL_SetVideoMode(SCREEN_WIDTH, SCREEN_HEIGHT, BPP, flags);
 	#endif
 	return 0;
 }
 
-void toggleFullscreen()
+void toggleFullscreen(void)
 {
 	#ifndef __EMSCRIPTEN__
 	SDL_WM_ToggleFullScreen(screen);
 	#endif
 }
 
-int videoClose()
+int videoClose(void)
 {
 	if (frame)
 	{
@@ -75,19 +85,32 @@ int videoClose()
 	return 0;
 }
 
-void videoFlip()
+void videoFlip(void)
 {
+	uint_fast16_t line;
+	_3do_Frame((struct VDLFrame*)frame, true);
+	
+	#if defined(__EMSCRIPTEN__)
+	for(line=0;line<256;line++)
+	{
+		_vdl_DoLineNew(line, (struct VDLFrame*)frame);
+	}
+	#else
+	line = 0;
+	while (line < 256) _vdl_DoLineNew(line++, (struct VDLFrame*)frame);
+	#endif
+	
 	SDL_LockSurface( screen );
 	Get_Frame_Bitmap((struct VDLFrame*)frame, screen->pixels, SCREEN_WIDTH, SCREEN_HEIGHT);
 	#if defined(FRAMECONTER) && !defined(SCALING)
-	drawDecimal(getFps(), 0, SCREEN_HEIGHT - FPS_FONT_HEIGHT, (unsigned short*)screen->pixels);
+	drawDecimal(getFps(), 0, SCREEN_HEIGHT - FPS_FONT_HEIGHT, (void*)screen->pixels);
 	#endif
 	SDL_UnlockSurface( screen );
 	
 	#ifdef SCALING
 	SDL_SoftStretch(screen, NULL, rl_screen, NULL);
 	#if defined(FRAMECONTER) && defined(SCALING)
-	drawDecimal(getFps(), 0, rl_screen->h - FPS_FONT_HEIGHT, (unsigned short*)rl_screen->pixels);
+	drawDecimal(getFps(), 0, rl_screen->h - FPS_FONT_HEIGHT, (void*)rl_screen->pixels);
 	#endif
 	SDL_Flip(rl_screen);
 	#else

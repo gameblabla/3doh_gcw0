@@ -42,7 +42,10 @@ char biosFile[128];
 static char imageFile[128];
 //static char configFile[128];
 
-static unsigned char __temporalfixes;
+#ifdef __EMSCRIPTEN__
+static int emulation_started = 0;
+#endif
+static int iso_loaded;
 
 int initEmu();
 
@@ -54,6 +57,7 @@ uint32 ReverseBytes(uint32 value)
 
 void readNvRam(void *pnvram)
 {
+	uint_fast8_t x;
 	/*FILE* bios1;*/
 	/*long fsize;*/
 	/*char *buffer;*/
@@ -64,7 +68,7 @@ void readNvRam(void *pnvram)
 	////////////////
 	// Fill out the volume header.
 	nvramStruct->recordType = 0x01;
-	int x;
+	
 	for (x = 0; x < 5; x++)
 		nvramStruct->syncBytes[x] = (char)'Z';
 	nvramStruct->recordVersion = 0x02;
@@ -108,31 +112,31 @@ void loadRom1(void *prom)
 }
 
 
-static int quit = 0;
-
+#if defined(__EMSCRIPTEN__)
+static int loop = 0;
 static inline void mainloop(void)
+#else
+static inline int mainloop(void)
+#endif
 {
-	uint32_t line;
-	extern struct VDLFrame *frame;
-
-	_3do_Frame((struct VDLFrame*)frame, true);
-	line = 0;
 	#if defined(__EMSCRIPTEN__)
-	for(line = 0; line < 256; line++)
-	{
-		_vdl_DoLineNew(line, (struct VDLFrame*)frame);
+	if (iso_loaded == 1 && emulation_started == 1) {
+	loop++;
+	printf("TEST %d\n", loop);
+	#endif
+	videoFlip();
+	
+	#if defined(__EMSCRIPTEN__)
 	}
 	#else
-	while (line < 256) _vdl_DoLineNew(line++, (struct VDLFrame*)frame);
-	#endif
-
-	videoFlip();
-
-	quit = inputQuit();
-
-	/* Framerate control */
 	#ifndef SDL_TRIPLEBUF
+	/* Framerate control */
 	synchronize_us();
+	#endif
+	#endif
+	
+	#if !defined(__EMSCRIPTEN__)
+	return isexit;
 	#endif
 }
 
@@ -145,7 +149,7 @@ int main(int argc, char *argv[])
 	SDL_Event event;
 	char home[128];
 	int error = 0;
-	int waitfps;
+	int quit = 0;
 	FILE* fp;
 
 	/* Create Display before in case it crashes before that */
@@ -200,21 +204,27 @@ int main(int argc, char *argv[])
 	//io_interface = &emuinterface;
 	soundInit();
 	inputInit();
+	
+	iso_loaded = fsOpenIso(imageFile);
 
-	if (!fsOpenIso(imageFile))
+	if (!iso_loaded)
 	{
 		error = 1;
 		goto got_error;
 	}
 
+#ifdef __EMSCRIPTEN__
+	emulation_started = _3do_Init();
+#else
 	_3do_Init();
+#endif
 
 #ifdef __EMSCRIPTEN__
 	printf("Emulation started\n");
 	emscripten_set_main_loop(mainloop, 0, 1);
 #else
 	while (!quit) {
-		mainloop();
+		quit = mainloop();
 	}
 #endif
 
@@ -280,18 +290,6 @@ got_error:
 		}
 
 	}
-#else
-			switch(error)
-			{
-				case 1:
-					printf("ISO file INVALID\n");
-				break;
-				case 2:
-					printf("BIOS file INVALID %s\n", biosFile);
-				break;
-			}
-#endif
-
 	/* Close everything and return */
 	inputClose();
 	soundClose();
@@ -299,7 +297,9 @@ got_error:
 	SDL_Quit();
 	_3do_Destroy();
 	fsClose();
+#else
 
+#endif
 	return 0;
 }
 

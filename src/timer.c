@@ -15,6 +15,8 @@
  *
  */
 
+#if !defined(__EMSCRIPTEN__)
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -84,3 +86,5 @@ void synchronize_us()
 	if (wait > 0)
 		sleep_us(wait);
 }
+
+#endif

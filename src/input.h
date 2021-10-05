@@ -59,5 +59,5 @@ int inputInit();
 int inputClose();
 SDL_Joystick *inputOpen(int joyid);
 void inputPoll(SDL_Joystick *joy);
-int inputQuit();
+extern int isexit;
 int inputFullscreen();

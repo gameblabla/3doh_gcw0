@@ -30,7 +30,7 @@
 
 
 int videoInit(void);
-int videoClose();
-void toggleFullscreen();
-void videoFlip();
-
+int videoClose(void);
+void toggleFullscreen(void);
+void videoFlip(void);
+void VideoError(void);

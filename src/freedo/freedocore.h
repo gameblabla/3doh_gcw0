@@ -21,8 +21,8 @@
    Felix Lazarev
  */
 
-#ifndef __3DO_SYSTEM_HEADER_DEFINITION
-#define __3DO_SYSTEM_HEADER_DEFINITION
+#ifndef THREEDO_SYSTEM_HEADER_DEFINITION
+#define THREEDO_SYSTEM_HEADER_DEFINITION
 
 #include <stdint.h>
 #include <stdbool.h>

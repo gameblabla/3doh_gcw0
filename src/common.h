@@ -15,7 +15,7 @@
     along with 3d'oh.  If not, see <http://www.gnu.org/licenses/>.
 
  */
-
+#include <stdint.h>
 #include "sound.h"
 #include "video.h"
 #include "input.h"
@@ -24,7 +24,7 @@
 #include "fs.h"
 
 #ifndef DREAMCAST
-#define uint32 unsigned int
+#define uint32 uint32_t
 #else
 
 #endif

@@ -8,15 +8,15 @@
 
 //extern char configFile[128];
 
-SDL_Event eventjoy;
-SDL_Joystick *joystick[6];
-inputState internal_input_state[6];
-inputMapping joystickmap[6];
+static SDL_Event eventjoy;
+static SDL_Joystick *joystick[6];
+static inputState internal_input_state[6];
+static inputMapping joystickmap[6];
 
-unsigned char *data;
-int usekb = 0;
+static unsigned char data[16];
+static int usekb = 0;
 int isexit = 0;
-int fullscreen = 0;
+static int fullscreen = 0;
 
 #ifdef FUNKEY
 #define _3DO_LEFT SDLK_l
@@ -44,7 +44,7 @@ int fullscreen = 0;
 #define _3DO_A SDLK_LCTRL
 #define _3DO_R SDLK_BACKSPACE
 #define _3DO_X SDLK_SPACE
-#define_ 3DO_P SDLK_RETURN
+#define _3DO_P SDLK_RETURN
 #define _3DO_L SDLK_TAB
 #define _3DO_EXIT SDLK_ESCAPE
 #endif
@@ -93,10 +93,6 @@ void inputReadConfig()
 	   configClose();*/
 }
 
-int inputQuit()
-{
-	return isexit;
-}
 
 int inputFullscreen()
 {
@@ -105,10 +101,11 @@ int inputFullscreen()
 
 int inputInit()
 {
+	/*
 	int i = 0;
 
 	printf("INFO: reading input config\n");
-	/*inputReadConfig();*/
+	//inputReadConfig();
 
 	if ((SDL_InitSubSystem( SDL_INIT_JOYSTICK )) < 0 ) {
 		printf("ERROR: can't init joystick subsystem\n");
@@ -126,34 +123,36 @@ int inputInit()
 
 	data = (unsigned char*)malloc(sizeof(unsigned char) * 16);
 
-	return SDL_InitSubSystem(SDL_INIT_JOYSTICK);
-
+	return SDL_InitSubSystem(SDL_INIT_JOYSTICK);*/
+	return 1;
 }
 
 int inputClose()
 {
 	/* Close and clean everything related to input */
-	free(data);
-	SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
+	/*free(data);
+	SDL_QuitSubSystem(SDL_INIT_JOYSTICK);*/
 	return 0;
 }
 
 SDL_Joystick *inputOpen(int joyid)
 {
 
-	SDL_Joystick *joystick;
+	/*SDL_Joystick *joystick;
 
 	SDL_JoystickEventState(SDL_ENABLE);
 
 	joystick = SDL_JoystickOpen(joyid);
 
-	return joystick;
+	return joystick;*/
+	return NULL;
 }
 
 int inputEnum()
 {
-	if (SDL_NumJoysticks() == 0) return 1;
-	else return SDL_NumJoysticks();
+	/*if (SDL_NumJoysticks() == 0) return 1;
+	else return SDL_NumJoysticks();*/
+	return 0;
 }
 
 

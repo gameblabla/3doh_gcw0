@@ -110,7 +110,7 @@ int _3do_Init(void)
 
 	_qrz_Init();
 
-	return 0;
+	return 1;
 }
 
 struct VDLFrame *curr_frame;
