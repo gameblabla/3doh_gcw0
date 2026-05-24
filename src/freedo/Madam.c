@@ -1451,7 +1451,22 @@ static uint16_t PDEC(uint16_t pixel, uint16_t * amv)
 	//pres=(pres|pdec.pmodeORmask)&pdec.pmodeANDmask;
 
 
-	pproj.Transparent = ( ((pres & 0x7fff) == 0x0) & pdec.tmask );
+	// Broken
+	//pproj.Transparent = ( ((pres & 0x7fff) == 0x0) & pdec.tmask );
+	
+	/*
+	
+	Idol Janshi Suchie-Pai Special
+	
+	The portrait was already being drawn underneath, 
+	but the frame/mask CEL drawn over it used 0x0001 as transparent black. 
+	The emulator treated bit 0 as color during the CEL transparency test, 
+	so 0x0001 became opaque near-black and covered the portrait. 
+	On 3DO CEL output, bit 0 can be a projector H bit, 
+	and bit 15 can be a projector V/P-mode bit; transparency should be based on the decoded RGB payload, not those projector bits. 
+	The 3DO art docs also describe black as the transparency mask and note that true RGB 0 black is not available in that transparent-mask workflow
+	*/
+	pproj.Transparent = (((pres & 0x7ffe) == 0x0000) && pdec.tmask);
 
 	return pres;
 }
