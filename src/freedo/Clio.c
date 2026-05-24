@@ -183,30 +183,14 @@ static bool clio_eo_dma_channel_enabled(unsigned channel)
 	return channel < 4 && (cregs[0x304] & (1u << (channel + 16))) != 0;
 }
 
-static uint32_t clio_current_ei_empty_level_mask(void)
-{
-	uint32_t mask = 0;
-	unsigned i;
-	for (i = 0; i < 13; i++) {
-		if (FIFOI[i].StartAdr != 0 && (FIFOI[i].StartLen - PTRI[i]) <= 0 &&
-		    (FIFOI[i].NextAdr == 0 || FIFOI[i].NextLen <= 0))
-			mask |= (1u << (i + 16));
-	}
-	return mask;
-}
-
 static void clio_reassert_level_fifo_irqs(void)
 {
-	uint32_t mask = clio_current_ei_empty_level_mask();
-	if (mask) {
-		uint32_t newly = mask & ~cregs[0x40];
-		cregs[0x40] |= mask;
-		if (newly) {
-			clio_fifo_level_reassert_count++;
-			clio_fifo_level_reassert_mask = mask;
-		}
-	}
+	/* Do not synthesize persistent EI-empty level interrupts here.
+	 * Commercial streaming code clears and masks FIFO interrupts as part of
+	 * its scheduling; reasserting them from generic CLIO acknowledge/FIFO
+	 * programming paths causes Doom's streamed intro audio to stall/silence. */
 }
+
 
 uint32_t _clio_GetFifoLevelReassertCount(void) { return clio_fifo_level_reassert_count; }
 uint32_t _clio_GetFifoLevelReassertMask(void) { return clio_fifo_level_reassert_mask; }
@@ -457,21 +441,6 @@ int _clio_Poke(uint32_t addr, uint32_t val)
 
 	if (clio_xbus_dma_timer_window == 0)
 		clio_xbus_dma_timer_accum = 0;
-
-	/* The CD/XBUS DMA path has observable timing side effects on CLIO timer 4
-	 * (register 0x120).  Opera carries this as Timing Hack 6 for Alone in the
-	 * Dark; model it as a generic XBUS-DMA timing accumulator instead of a
-	 * per-title switch. */
-	if (addr == 0x120) {
-		clio_xbus_timer120_last_in = val;
-		if (clio_xbus_dma_timer_accum > 800) {
-			val = clio_xbus_dma_timer_accum + (val / 0x30);
-			clio_xbus_timer120_adjust_count++;
-		}
-		clio_xbus_timer120_last_out = val;
-		cregs[addr] = val & 0xffff;
-		return 0;
-	}
 
 	if ( (addr & ~0x2C) == 0x40 ) { // 0x40..0x4C, 0x60..0x6C case
 		if (addr == 0x40) {
@@ -834,10 +803,6 @@ void HandleDMA(uint32_t val)
 		clio_xbus_dma_pulse_count++;
 		clio_xbus_dma_last_addr = trg;
 		clio_xbus_dma_last_len = (uint32_t)len;
-		if (clio_xbus_dma_timer_accum < 5800)
-			clio_xbus_dma_timer_accum += 0x33;
-		clio_xbus_dma_timer_window = 6;
-
 		cregs[0x400] &= ~0x80;
 
 		if ((cregs[0x404]) & 0x200) {
