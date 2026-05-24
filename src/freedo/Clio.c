@@ -934,9 +934,16 @@ uint16_t  _clio_EIFIFO(uint16_t channel)
 		} else {
 			PTRI[channel] = 0;
 			_clio_GenerateFiq(1 << (channel + 16), 0);//generate fiq
-			if (FIFOI[channel].NextAdr != 0 && clio_ei_dma_channel_enabled(channel)) {// reload enabled see patent WO09410641A1, 49.16 and Opera 7cef4a7
+			if (FIFOI[channel].NextAdr != 0) {
 				uint32_t reload_addr = FIFOI[channel].NextAdr;
 				int reload_len = FIFOI[channel].NextLen;
+				/* NextAdr/NextLen are a FIFO-owned, already-latched descriptor.
+				 * The DMA enable bit controls whether that descriptor remains
+				 * reusable for automatic looping; it must not prevent the queued
+				 * segment from being consumed once. Otherwise titles that disable
+				 * the channel immediately after queuing the tail segment underrun
+				 * and repeatedly feed stale DSP samples. */
+				bool reload_reusable = clio_ei_dma_channel_enabled(channel);
 				clio_eififo_reload_count++;
 				if (channel < 13)
 					clio_eififo_reload_by_channel[channel]++;
@@ -944,9 +951,10 @@ uint16_t  _clio_EIFIFO(uint16_t channel)
 				clio_last_fifo_event = CLIO_FIFO_EVENT_EI_RELOAD(channel);
 				FIFOI[channel].StartAdr = reload_addr;
 				FIFOI[channel].StartLen = reload_len;
-				/* Do not clear NextAdr/NextLen on consumption. The patented/Opera
-				 * behavior treats the next descriptor as reusable while the DMA
-				 * channel remains enabled; disabling DMA or zeroing start stops it. */
+				if (!reload_reusable) {
+					FIFOI[channel].NextAdr = 0;
+					FIFOI[channel].NextLen = 0;
+				}
 				{
 					uint32_t dma_addr = FIFOI[channel].StartAdr + (uint32_t)PTRI[channel];
 					if (_arm_GetStrictBusFaults() && !clio_ram_range_valid(dma_addr, 2)) {
@@ -962,10 +970,6 @@ uint16_t  _clio_EIFIFO(uint16_t channel)
 				}
 				PTRI[channel] += 2;
 			} else {
-				if (FIFOI[channel].NextAdr != 0 && !clio_ei_dma_channel_enabled(channel)) {
-					clio_fifo_reload_dma_block_count++;
-					clio_fifo_last_reload_dma_block_channel = channel;
-				}
 				clio_eififo_empty_read_count++;
 				if (channel < 13)
 					clio_eififo_empty_by_channel[channel]++;
@@ -984,12 +988,15 @@ uint16_t  _clio_EIFIFO(uint16_t channel)
 	//          in order to initialize val appropriately.
 
 	// _clio_GenerateFiq(1<<(channel+16),0);
+	/* An empty input FIFO does not keep supplying the previous sample.
+	 * Returning the latched sample here turns a short underrun into a
+	 * sustained buzz when software waits for the empty interrupt. */
 	clio_eififo_empty_read_count++;
 	if (channel < 13)
 		clio_eififo_empty_by_channel[channel]++;
 	clio_last_eififo_empty_channel = channel;
 	clio_last_fifo_event = CLIO_FIFO_EVENT_EI_EMPTY(channel);
-	return (channel < 13) ? clio_eififo_last_value[channel] : 0;
+	return 0;
 }
 
 void  _clio_EOFIFO(uint16_t channel, uint16_t val)
@@ -1020,16 +1027,19 @@ void  _clio_EOFIFO(uint16_t channel, uint16_t val)
 		clio_last_fifo_event = CLIO_FIFO_EVENT_EO_FULL(channel);
 		_clio_GenerateFiq(1 << (channel + 12), 0);//generate fiq
 
-		if (FIFOO[channel].NextAdr != 0 && clio_eo_dma_channel_enabled(channel)) { //reload enabled?
+		if (FIFOO[channel].NextAdr != 0) { // reload the already-latched next segment
 			uint32_t reload_addr = FIFOO[channel].NextAdr;
 			int reload_len = FIFOO[channel].NextLen;
+			/* As with EI FIFOs, the queued next EO descriptor is consumed
+			 * once even if the channel is no longer enabled for looping. */
+			bool reload_reusable = clio_eo_dma_channel_enabled(channel);
 			FIFOO[channel].StartAdr = reload_addr;
 			FIFOO[channel].StartLen = reload_len;
-		} else {
-			if (FIFOO[channel].NextAdr != 0 && !clio_eo_dma_channel_enabled(channel)) {
-				clio_fifo_reload_dma_block_count++;
-				clio_fifo_last_reload_dma_block_channel = 0x100u | channel;
+			if (!reload_reusable) {
+				FIFOO[channel].NextAdr = 0;
+				FIFOO[channel].NextLen = 0;
 			}
+		} else {
 			FIFOO[channel].StartAdr = 0;
 		}
 	}
@@ -1048,7 +1058,7 @@ uint16_t  _clio_EIFIFONI(uint16_t channel)
 		clio_last_eififo_empty_channel = channel;
 		clio_last_fifo_event = CLIO_FIFO_EVENT_EI_EMPTY(channel);
 		clio_reassert_level_fifo_irqs();
-		return (channel < 13) ? clio_eififo_last_value[channel] : 0;
+		return 0;
 	}
 	dma_addr = FIFOI[channel].StartAdr + (uint32_t)PTRI[channel];
 	if (_arm_GetStrictBusFaults() && !clio_ram_range_valid(dma_addr, 2)) {
@@ -1067,7 +1077,7 @@ uint16_t   _clio_GetEIFIFOStat(uint8_t channel)
 	if (FIFOI[channel].StartAdr != 0 && (FIFOI[channel].StartLen - PTRI[channel]) > 0)
 		return 2;
 
-	if (FIFOI[channel].StartAdr != 0 && FIFOI[channel].NextAdr != 0 && FIFOI[channel].NextLen > 0 && clio_ei_dma_channel_enabled(channel))
+	if (FIFOI[channel].StartAdr != 0 && FIFOI[channel].NextAdr != 0 && FIFOI[channel].NextLen > 0)
 		return 2;
 
 	if (FIFOI[channel].StartAdr != 0)
