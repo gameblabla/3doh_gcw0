@@ -25,6 +25,7 @@
 #define UI_STATUS_LEN 256
 #define UI_PATH_LEN 1024
 #define UI_STATUS_TIMEOUT_NS UINT64_C(1500000000)
+#define INPUT_EDGE_QUEUE_LEN 256
 
 struct threedoh_platform {
     SDL_Window *window;
@@ -46,6 +47,7 @@ struct threedoh_platform {
     bool auto_crop;
     bool running;
     bool paused;
+    bool input_recording;
     bool muted;
     bool frame_limiter;
     bool vsync;
@@ -64,6 +66,9 @@ struct threedoh_platform {
     SDL_Scancode key_map[THREEDOH_BUTTON_COUNT];
     int joy_map[THREEDOH_BUTTON_COUNT];
     threedoh_platform_command pending;
+    threedoh_platform_input_edge input_edges[INPUT_EDGE_QUEUE_LEN];
+    int input_edge_head;
+    int input_edge_tail;
 
     volatile int dialog_ready;
     volatile int dialog_active;
@@ -302,6 +307,41 @@ static void queue_command(threedoh_platform *p, int flags, int slot, const char 
         safe_copy(p->pending.path, sizeof(p->pending.path), path);
 }
 
+static void queue_input_edge(threedoh_platform *p, int button, int pressed)
+{
+    int next_tail;
+    if (!p || !p->input_recording || button < 0 || button >= THREEDOH_BUTTON_EXIT)
+        return;
+    next_tail = (p->input_edge_tail + 1) % INPUT_EDGE_QUEUE_LEN;
+    if (next_tail == p->input_edge_head)
+        p->input_edge_head = (p->input_edge_head + 1) % INPUT_EDGE_QUEUE_LEN;
+    p->input_edges[p->input_edge_tail].button = button;
+    p->input_edges[p->input_edge_tail].pressed = pressed ? 1 : 0;
+    p->input_edge_tail = next_tail;
+}
+
+static void set_button_state(threedoh_platform *p, int button, int pressed)
+{
+    int mask;
+    int was_down;
+    if (button < 0 || button >= THREEDOH_BUTTON_EXIT)
+        return;
+    mask = threedoh_input_mask_for_button(button);
+    if (!mask)
+        return;
+    was_down = (g_input_state[0].buttons & mask) ? 1 : 0;
+    threedoh_input_set_button(g_input_state, 0, button, pressed);
+    if (was_down != (pressed ? 1 : 0))
+        queue_input_edge(p, button, pressed);
+}
+
+static void release_all_game_buttons(threedoh_platform *p)
+{
+    int i;
+    for (i = 0; i < (int)(sizeof(g_buttons) / sizeof(g_buttons[0])); i++)
+        set_button_state(p, g_buttons[i], 0);
+}
+
 threedoh_platform *threedoh_platform_create(void)
 {
     threedoh_platform *p = (threedoh_platform *)calloc(1, sizeof(threedoh_platform));
@@ -455,7 +495,7 @@ static int item_count_for_section(int section)
     case 0: return 5;
     case 1: return UI_SLOTS * 2;
     case 2: return (int)(sizeof(g_buttons) / sizeof(g_buttons[0])) + 2;
-    case 3: return 9;
+    case 3: return 10;
     default: return 0;
     }
 }
@@ -492,9 +532,9 @@ static void item_label(threedoh_platform *p, int section, int item, char *out, s
     switch (section) {
     case 0:
         switch (item) {
-        case 0: snprintf(out, out_size, "%s", p->paused ? "Resume emulation" : "Pause emulation"); break;
+        case 0: snprintf(out, out_size, "%s", p->input_recording ? "Pause disabled while recording" : (p->paused ? "Resume emulation" : "Pause emulation")); break;
         case 1: snprintf(out, out_size, "Load new game..."); break;
-        case 2: snprintf(out, out_size, "Soft reset current game"); break;
+        case 2: snprintf(out, out_size, "%s", p->input_recording ? "Soft reset disabled while recording" : "Soft reset current game"); break;
         case 3: snprintf(out, out_size, "Fullscreen: %s", p->fullscreen ? "On" : "Off"); break;
         case 4: snprintf(out, out_size, "Quit"); break;
         }
@@ -530,8 +570,9 @@ static void item_label(threedoh_platform *p, int section, int item, char *out, s
         case 4: snprintf(out, out_size, "Scaling: %s", p->integer_scale ? "Integer / aspect" : "Stretch"); break;
         case 5: snprintf(out, out_size, "Filter: %s", p->linear_filter ? "Linear" : "Nearest"); break;
         case 6: snprintf(out, out_size, "Auto-crop: %s", p->auto_crop ? "On" : "Off"); break;
-        case 7: snprintf(out, out_size, "Shortcuts / help"); break;
-        case 8: snprintf(out, out_size, "Quit"); break;
+        case 7: snprintf(out, out_size, "Take screenshot"); break;
+        case 8: snprintf(out, out_size, "Shortcuts / help"); break;
+        case 9: snprintf(out, out_size, "Quit"); break;
         }
         break;
     }
@@ -565,6 +606,10 @@ static void activate_item(threedoh_platform *p)
     case 0:
         switch (p->selected) {
         case 0:
+            if (p->input_recording) {
+                set_status(p, "Pause is disabled while input recording is active.");
+                break;
+            }
             if (p->paused) {
                 queue_command(p, THREEDOH_PLATFORM_CMD_RESUME, 0, NULL);
                 p->menu_paused_by_ui = false;
@@ -575,7 +620,12 @@ static void activate_item(threedoh_platform *p)
             }
             break;
         case 1: open_disc_dialog(p); break;
-        case 2: queue_command(p, THREEDOH_PLATFORM_CMD_SOFT_RESET, 0, NULL); break;
+        case 2:
+            if (p->input_recording)
+                set_status(p, "Soft reset is disabled while input recording is active.");
+            else
+                queue_command(p, THREEDOH_PLATFORM_CMD_SOFT_RESET, 0, NULL);
+            break;
         case 3: queue_command(p, THREEDOH_PLATFORM_CMD_TOGGLE_FULLSCREEN, 0, NULL); break;
         case 4: queue_command(p, THREEDOH_PLATFORM_CMD_QUIT, 0, NULL); break;
         }
@@ -636,9 +686,12 @@ static void activate_item(threedoh_platform *p)
             set_status(p, p->auto_crop ? "Auto-crop enabled." : "Auto-crop disabled.");
             break;
         case 7:
-            set_status(p, "F1/Esc menu, F5 save slot 1, F7 load slot 1, F8 reset, F11 fullscreen, Ctrl+O load disc.");
+            queue_command(p, THREEDOH_PLATFORM_CMD_SCREENSHOT, 0, NULL);
             break;
         case 8:
+            set_status(p, "F1/Esc menu, F5 save slot 1, F7 load slot 1, F8 reset, F11 fullscreen, F12 screenshot, Ctrl+O load disc.");
+            break;
+        case 9:
             queue_command(p, THREEDOH_PLATFORM_CMD_QUIT, 0, NULL);
             break;
         }
@@ -651,7 +704,11 @@ static void open_menu(threedoh_platform *p)
     if (!p || p->menu_open)
         return;
     p->menu_open = true;
-    if (p->running && !p->paused) {
+    if (p->input_recording) {
+        p->menu_paused_by_ui = false;
+        release_all_game_buttons(p);
+        set_status(p, "Menu opened. Recording mode keeps emulation running.");
+    } else if (p->running && !p->paused) {
         p->menu_paused_by_ui = true;
         queue_command(p, THREEDOH_PLATFORM_CMD_PAUSE, 0, NULL);
         set_status(p, "Menu opened. Emulation paused; last frame remains visible behind the menu.");
@@ -734,14 +791,14 @@ static void set_key(threedoh_platform *p, SDL_Scancode scancode, int pressed)
 {
     int button = button_from_scancode(p, scancode);
     if (button >= 0)
-        threedoh_input_set_button(g_input_state, 0, button, pressed);
+        set_button_state(p, button, pressed);
 }
 
 static void set_joy_button(threedoh_platform *p, int button_index, int pressed)
 {
     int button = button_from_joy_button(p, button_index);
     if (button >= 0)
-        threedoh_input_set_button(g_input_state, 0, button, pressed);
+        set_button_state(p, button, pressed);
 }
 
 static void remap_joy_button(threedoh_platform *p, int joy_button)
@@ -766,10 +823,15 @@ static void handle_game_hotkey(threedoh_platform *p, SDL_Scancode scancode, SDL_
     } else if (scancode == SDL_SCANCODE_F7) {
         queue_command(p, THREEDOH_PLATFORM_CMD_LOAD_STATE, 1, NULL);
     } else if (scancode == SDL_SCANCODE_F8) {
-        queue_command(p, THREEDOH_PLATFORM_CMD_SOFT_RESET, 0, NULL);
+        if (p->input_recording)
+            set_status(p, "Soft reset is disabled while input recording is active.");
+        else
+            queue_command(p, THREEDOH_PLATFORM_CMD_SOFT_RESET, 0, NULL);
     } else if (scancode == SDL_SCANCODE_F11 ||
                ((SDL_GetModState() & SDL_KMOD_ALT) && key == SDLK_RETURN)) {
         queue_command(p, THREEDOH_PLATFORM_CMD_TOGGLE_FULLSCREEN, 0, NULL);
+    } else if (scancode == SDL_SCANCODE_F12) {
+        queue_command(p, THREEDOH_PLATFORM_CMD_SCREENSHOT, 0, NULL);
     } else if ((SDL_GetModState() & SDL_KMOD_CTRL) && scancode == SDL_SCANCODE_O) {
         open_disc_dialog(p);
     } else {
@@ -806,11 +868,11 @@ int threedoh_platform_poll(threedoh_platform *platform)
         case SDL_EVENT_JOYSTICK_AXIS_MOTION:
             if (!platform->menu_open) {
                 if (event.jaxis.axis == 0) {
-                    threedoh_input_set_button(g_input_state, 0, THREEDOH_BUTTON_LEFT, event.jaxis.value < -12000);
-                    threedoh_input_set_button(g_input_state, 0, THREEDOH_BUTTON_RIGHT, event.jaxis.value > 12000);
+                    set_button_state(platform, THREEDOH_BUTTON_LEFT, event.jaxis.value < -12000);
+                    set_button_state(platform, THREEDOH_BUTTON_RIGHT, event.jaxis.value > 12000);
                 } else if (event.jaxis.axis == 1) {
-                    threedoh_input_set_button(g_input_state, 0, THREEDOH_BUTTON_UP, event.jaxis.value < -12000);
-                    threedoh_input_set_button(g_input_state, 0, THREEDOH_BUTTON_DOWN, event.jaxis.value > 12000);
+                    set_button_state(platform, THREEDOH_BUTTON_UP, event.jaxis.value < -12000);
+                    set_button_state(platform, THREEDOH_BUTTON_DOWN, event.jaxis.value > 12000);
                 }
             }
             break;
@@ -1199,13 +1261,32 @@ void threedoh_platform_set_video_standard(threedoh_platform *platform,
     threedoh_platform_set_frame_rate(platform, hz);
 }
 
+void threedoh_platform_set_input_recording(threedoh_platform *platform, int enabled)
+{
+    if (!platform)
+        return;
+    platform->input_recording = enabled ? true : false;
+    platform->input_edge_head = 0;
+    platform->input_edge_tail = 0;
+}
+
+int threedoh_platform_take_input_edge(threedoh_platform *platform,
+                                      threedoh_platform_input_edge *edge)
+{
+    if (!platform || !edge || platform->input_edge_head == platform->input_edge_tail)
+        return 0;
+    *edge = platform->input_edges[platform->input_edge_head];
+    platform->input_edge_head = (platform->input_edge_head + 1) % INPUT_EDGE_QUEUE_LEN;
+    return 1;
+}
+
 void threedoh_input_button_event(int button, int pressed)
 {
     if (button == THREEDOH_BUTTON_EXIT && pressed) {
         isexit = 1;
         return;
     }
-    threedoh_input_set_button(g_input_state, 0, button, pressed);
+    set_button_state(g_active_platform, button, pressed);
 }
 
 int inputInit(void)

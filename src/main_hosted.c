@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #ifdef _WIN32
@@ -151,6 +152,167 @@ static int state_slot_path(const char *iso_path, int slot, char *out, size_t out
 #else
     snprintf(out, out_size, "%s/%s.slot%d.3dohstate", dir, name, slot);
 #endif
+    return 1;
+}
+
+static int screenshot_dir(char *out, size_t out_size)
+{
+#if defined(_WIN32)
+    const char *base = getenv("APPDATA");
+    if (base && *base) {
+        char root[512];
+        snprintf(root, sizeof(root), "%s\\3doh", base);
+        make_dir(root);
+        snprintf(out, out_size, "%s\\screenshots", root);
+        return make_dir(out);
+    }
+    snprintf(out, out_size, "screenshots");
+    return make_dir(out);
+#else
+    const char *home = getenv("HOME");
+    if (home && *home) {
+        char root[512];
+        snprintf(root, sizeof(root), "%s/.3doh", home);
+        make_dir(root);
+        snprintf(out, out_size, "%s/screenshots", root);
+        return make_dir(out);
+    }
+    snprintf(out, out_size, "screenshots");
+    return make_dir(out);
+#endif
+}
+
+static const char *record_button_name(int button)
+{
+    switch (button) {
+    case THREEDOH_BUTTON_UP: return "UP";
+    case THREEDOH_BUTTON_DOWN: return "DOWN";
+    case THREEDOH_BUTTON_LEFT: return "LEFT";
+    case THREEDOH_BUTTON_RIGHT: return "RIGHT";
+    case THREEDOH_BUTTON_A: return "A";
+    case THREEDOH_BUTTON_B: return "B";
+    case THREEDOH_BUTTON_C: return "C";
+    case THREEDOH_BUTTON_X: return "X";
+    case THREEDOH_BUTTON_L: return "L";
+    case THREEDOH_BUTTON_R: return "R";
+    case THREEDOH_BUTTON_P: return "P";
+    default: return NULL;
+    }
+}
+
+static void write_recorded_input_edges(threedoh_platform *platform, FILE *fp,
+                                       unsigned long frame, int hz)
+{
+    threedoh_platform_input_edge edge;
+    double seconds;
+    if (!platform || !fp || hz <= 0)
+        return;
+    seconds = (double)frame / (double)hz;
+    while (threedoh_platform_take_input_edge(platform, &edge)) {
+        const char *button = record_button_name(edge.button);
+        if (button) {
+            fprintf(fp, "%.6f:%s:%s\n", seconds, button, edge.pressed ? "down" : "up");
+            fflush(fp);
+        }
+    }
+}
+
+static void write_le16(FILE *fp, unsigned int v)
+{
+    fputc((int)(v & 0xff), fp);
+    fputc((int)((v >> 8) & 0xff), fp);
+}
+
+static void write_le32(FILE *fp, unsigned int v)
+{
+    fputc((int)(v & 0xff), fp);
+    fputc((int)((v >> 8) & 0xff), fp);
+    fputc((int)((v >> 16) & 0xff), fp);
+    fputc((int)((v >> 24) & 0xff), fp);
+}
+
+static int save_screenshot_bmp(const char *iso_path, const unsigned char *pixels,
+                               int width, int height, int pitch, int pixel_bytes,
+                               char *out_path, size_t out_path_size)
+{
+    char dir[512];
+    char name[256];
+    char stamp[32];
+    time_t now;
+    struct tm *tm_now;
+    FILE *fp;
+    int y;
+    static unsigned int screenshot_index = 0;
+    unsigned int row_bytes;
+    unsigned int file_size;
+
+    if (!pixels || width <= 0 || height <= 0 || pitch <= 0 || !out_path || !out_path_size)
+        return 0;
+    if (pixel_bytes != 2 && pixel_bytes != 4)
+        return 0;
+    if (!screenshot_dir(dir, sizeof(dir)))
+        return 0;
+
+    sanitize_name(basename_ptr(iso_path), name, sizeof(name));
+    now = time(NULL);
+    tm_now = localtime(&now);
+    if (tm_now)
+        strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", tm_now);
+    else
+        snprintf(stamp, sizeof(stamp), "unknown_time");
+#if defined(_WIN32)
+    snprintf(out_path, out_path_size, "%s\\%s_%s_%03u.bmp", dir, name, stamp, screenshot_index++);
+#else
+    snprintf(out_path, out_path_size, "%s/%s_%s_%03u.bmp", dir, name, stamp, screenshot_index++);
+#endif
+
+    fp = fopen(out_path, "wb");
+    if (!fp)
+        return 0;
+    row_bytes = (unsigned int)((width * 3 + 3) & ~3);
+    file_size = 54U + row_bytes * (unsigned int)height;
+
+    fputc('B', fp);
+    fputc('M', fp);
+    write_le32(fp, file_size);
+    write_le16(fp, 0);
+    write_le16(fp, 0);
+    write_le32(fp, 54);
+    write_le32(fp, 40);
+    write_le32(fp, (unsigned int)width);
+    write_le32(fp, (unsigned int)height);
+    write_le16(fp, 1);
+    write_le16(fp, 24);
+    write_le32(fp, 0);
+    write_le32(fp, row_bytes * (unsigned int)height);
+    write_le32(fp, 2835);
+    write_le32(fp, 2835);
+    write_le32(fp, 0);
+    write_le32(fp, 0);
+
+    for (y = height - 1; y >= 0; y--) {
+        const unsigned char *row = pixels + y * pitch;
+        int x;
+        for (x = 0; x < width; x++) {
+            unsigned char bgr[3];
+            if (pixel_bytes == 4) {
+                const unsigned char *px = row + x * 4;
+                bgr[0] = px[2];
+                bgr[1] = px[1];
+                bgr[2] = px[0];
+            } else {
+                uint16_t v = (uint16_t)row[x * 2] | ((uint16_t)row[x * 2 + 1] << 8);
+                bgr[2] = (unsigned char)(((v >> 11) & 0x1f) * 255 / 31);
+                bgr[1] = (unsigned char)(((v >> 5) & 0x3f) * 255 / 63);
+                bgr[0] = (unsigned char)((v & 0x1f) * 255 / 31);
+            }
+            fwrite(bgr, 1, 3, fp);
+        }
+        for (x = width * 3; x < (int)row_bytes; x++)
+            fputc(0, fp);
+    }
+    if (fclose(fp) != 0)
+        return 0;
     return 1;
 }
 
@@ -340,6 +502,8 @@ int main(int argc, char **argv)
     int positional = 0;
     threedoh_input_script input_script;
     const char *script_error = NULL;
+    char record_input_path[1024];
+    FILE *record_input_fp = NULL;
     long stop_after_frames_arg = -1;
     double stop_after_seconds = -1.0;
     long stop_after_frames = -1;
@@ -348,6 +512,7 @@ int main(int argc, char **argv)
 
     iso_path[0] = 0;
     bios_path[0] = 0;
+    record_input_path[0] = 0;
     threedoh_input_script_init(&input_script);
 
     for (i = 1; i < argc; i++) {
@@ -392,6 +557,13 @@ int main(int argc, char **argv)
             threedoh_input_script_set_hold_ms(&input_script, (int)hold);
             continue;
         }
+        opt = option_value(argc, argv, &i, "--record-input", argv[i], &value);
+        if (opt < 0) return 1;
+        if (opt || (opt = option_value(argc, argv, &i, "--input-record", argv[i], &value)) != 0) {
+            if (opt < 0) return 1;
+            snprintf(record_input_path, sizeof(record_input_path), "%s", value);
+            continue;
+        }
         opt = option_value(argc, argv, &i, "--stop-after-frames", argv[i], &value);
         if (opt < 0) return 1;
         if (opt) {
@@ -425,7 +597,13 @@ int main(int argc, char **argv)
     if (!iso_path[0]) {
         fprintf(stderr, "Usage: %s <game.iso|game.cue> [bios.bin] [--auto|--ntsc|--pal|--pal1] [--strict-bus|--compat-bus] [--strict-dsp|--compat-dsp] [--strict-madam|--compat-madam]\n", argv[0]);
         fprintf(stderr, "       [--input \"1550f:P,1930f:DOWN,1980f:A\"] [--input-script file] [--input-hold-ms ms]\n");
+        fprintf(stderr, "       [--record-input file]\n");
         fprintf(stderr, "       [--stop-after seconds | --stop-after-frames frames]\n");
+        return 1;
+    }
+
+    if (record_input_path[0] && input_script.raw_count > 0) {
+        fprintf(stderr, "--record-input cannot be combined with --input or --input-script.\n");
         return 1;
     }
 
@@ -487,6 +665,23 @@ int main(int argc, char **argv)
     threedoh_platform_set_video_standard(platform, threedoh_core_video_standard_mode(core),
                                          threedoh_core_active_video_standard(core),
                                          threedoh_core_frame_rate_hz(core));
+    if (record_input_path[0]) {
+        record_input_fp = fopen(record_input_path, "w");
+        if (!record_input_fp) {
+            fprintf(stderr, "Could not open input recording file '%s': %s\n",
+                    record_input_path, strerror(errno));
+            goto out;
+        }
+        fprintf(record_input_fp, "# 3DOh SDL3 input recording\n");
+        fprintf(record_input_fp, "# disc: %s\n", iso_path);
+        fprintf(record_input_fp, "# video: %s\n", threedoh_core_video_standard_name(core));
+        fprintf(record_input_fp, "# frame_rate_hz: %d\n", threedoh_core_frame_rate_hz(core));
+        fprintf(record_input_fp, "# format: seconds:BUTTON:down|up\n");
+        fflush(record_input_fp);
+        threedoh_platform_set_input_recording(platform, 1);
+        fprintf(stderr, "Recording input to %s. Pause and reset are disabled while recording.\n",
+                record_input_path);
+    }
     threedoh_input_script_compile(&input_script, threedoh_core_frame_rate_hz(core));
     if (stop_after_frames_arg >= 0)
         stop_after_frames = stop_after_frames_arg;
@@ -509,9 +704,26 @@ int main(int argc, char **argv)
         threedoh_platform_command command;
 
         threedoh_platform_poll(platform);
+        write_recorded_input_edges(platform, record_input_fp, emu_frame,
+                                   threedoh_core_frame_rate_hz(core));
         while (threedoh_platform_take_command(platform, &command)) {
             if (command.flags & THREEDOH_PLATFORM_CMD_TOGGLE_FULLSCREEN)
                 threedoh_platform_toggle_fullscreen(platform);
+
+            if (command.flags & THREEDOH_PLATFORM_CMD_SCREENSHOT) {
+                char path[1024];
+                if (save_screenshot_bmp(iso_path, framebuffer,
+                                        threedoh_core_visible_width(core),
+                                        threedoh_core_visible_height(core),
+                                        threedoh_core_max_visible_width() * THREEDOH_PIXEL_BYTES,
+                                        THREEDOH_PIXEL_BYTES, path, sizeof(path))) {
+                    set_statusf(platform, "Screenshot saved: %s", path, -1);
+                    fprintf(stderr, "Screenshot saved: %s\n", path);
+                } else {
+                    threedoh_platform_set_status(platform, "Screenshot failed.");
+                    fprintf(stderr, "Screenshot failed.\n");
+                }
+            }
 
             if (command.flags & THREEDOH_PLATFORM_CMD_SET_VIDEO_STANDARD) {
                 int requested_mode = command.slot;
@@ -534,23 +746,31 @@ int main(int argc, char **argv)
                 }
             }
 
-            if (command.flags & THREEDOH_PLATFORM_CMD_TOGGLE_PAUSE) {
+            if (record_input_fp && (command.flags & THREEDOH_PLATFORM_CMD_TOGGLE_PAUSE)) {
+                threedoh_platform_set_status(platform, "Pause is disabled while input recording is active.");
+            } else if (command.flags & THREEDOH_PLATFORM_CMD_TOGGLE_PAUSE) {
                 paused = !paused;
                 threedoh_platform_set_runtime_state(platform, 1, paused, iso_path);
                 threedoh_platform_set_status(platform, paused ? "Emulation paused." : "Emulation resumed.");
             }
 
-            if (command.flags & THREEDOH_PLATFORM_CMD_PAUSE) {
+            if (record_input_fp && (command.flags & THREEDOH_PLATFORM_CMD_PAUSE)) {
+                threedoh_platform_set_status(platform, "Pause is disabled while input recording is active.");
+            } else if (command.flags & THREEDOH_PLATFORM_CMD_PAUSE) {
                 paused = 1;
                 threedoh_platform_set_runtime_state(platform, 1, paused, iso_path);
             }
 
-            if (command.flags & THREEDOH_PLATFORM_CMD_RESUME) {
+            if (record_input_fp && (command.flags & THREEDOH_PLATFORM_CMD_RESUME)) {
+                threedoh_platform_set_status(platform, "Pause/resume is disabled while input recording is active.");
+            } else if (command.flags & THREEDOH_PLATFORM_CMD_RESUME) {
                 paused = 0;
                 threedoh_platform_set_runtime_state(platform, 1, paused, iso_path);
             }
 
-            if (command.flags & THREEDOH_PLATFORM_CMD_SOFT_RESET) {
+            if (record_input_fp && (command.flags & THREEDOH_PLATFORM_CMD_SOFT_RESET)) {
+                threedoh_platform_set_status(platform, "Soft reset is disabled while input recording is active.");
+            } else if (command.flags & THREEDOH_PLATFORM_CMD_SOFT_RESET) {
                 if (threedoh_core_soft_reset(core)) {
                     memset(framebuffer, 0, threedoh_core_max_visible_width() * threedoh_core_max_visible_height() * THREEDOH_PIXEL_BYTES);
                     paused = 0;
@@ -670,6 +890,10 @@ int main(int argc, char **argv)
     rc = 0;
 
 out:
+    if (record_input_fp) {
+        fclose(record_input_fp);
+        record_input_fp = NULL;
+    }
     if (core) {
         threedoh_core_stop(core);
         free(core);

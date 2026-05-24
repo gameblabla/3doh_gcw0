@@ -21,7 +21,8 @@ enum threedoh_platform_command_bits {
     THREEDOH_PLATFORM_CMD_TOGGLE_FULLSCREEN = 1 << 6,
     THREEDOH_PLATFORM_CMD_PAUSE = 1 << 7,
     THREEDOH_PLATFORM_CMD_RESUME = 1 << 8,
-    THREEDOH_PLATFORM_CMD_SET_VIDEO_STANDARD = 1 << 9
+    THREEDOH_PLATFORM_CMD_SET_VIDEO_STANDARD = 1 << 9,
+    THREEDOH_PLATFORM_CMD_SCREENSHOT = 1 << 10
 };
 
 typedef struct threedoh_platform_command {
@@ -29,6 +30,11 @@ typedef struct threedoh_platform_command {
     int slot;
     char path[1024];
 } threedoh_platform_command;
+
+typedef struct threedoh_platform_input_edge {
+    int button;
+    int pressed;
+} threedoh_platform_input_edge;
 
 threedoh_platform *threedoh_platform_create(void);
 int threedoh_platform_init(threedoh_platform *platform, const char *title,
@@ -52,6 +58,9 @@ void threedoh_platform_set_runtime_state(threedoh_platform *platform,
                                          const char *disc_path);
 void threedoh_platform_set_video_standard(threedoh_platform *platform,
                                           int mode, int active_standard, int hz);
+void threedoh_platform_set_input_recording(threedoh_platform *platform, int enabled);
+int threedoh_platform_take_input_edge(threedoh_platform *platform,
+                                      threedoh_platform_input_edge *edge);
 
 #ifdef __cplusplus
 }
