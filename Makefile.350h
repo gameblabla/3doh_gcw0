@@ -35,6 +35,8 @@ OBJS = \
 	src/freedo/SPORT.o \
 	src/freedo/XBUS.o \
 	src/freedo/freedo_fixedpoint_math.o \
+	src/freedo/prng16.o \
+	src/freedo/prng32.o \
 	src/video.o \
 	src/sound.o \
 	src/cdrom.o \

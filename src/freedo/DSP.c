@@ -31,6 +31,7 @@
 #include "arm.h"
 #include "retro_inline.h"
 #include "freedocore.h"
+#include "prng16.h"
 
 #if 0 //20 bit ALU
 #define ALUSIZEMASK 0xFFFFf000
@@ -983,7 +984,7 @@ static INLINE uint16_t ireadh(unsigned int addr) //DSP IREAD (includes EI, I)
 	//	addr&=0x3ff;
 	switch (addr) {
 	case 0xea:
-		dregs.NOISE = fastrand();
+		dregs.NOISE = (uint16_t)prng16();
 		return dregs.NOISE;
 	case 0xeb:
 		//printf("#DSP read AudioOutStatus (0x%4.4X)\n",dregs.AudioOutStatus);

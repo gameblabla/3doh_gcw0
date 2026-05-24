@@ -38,6 +38,7 @@ WASM_LDFLAGS += -Wl,--export=threedoh_audio_sample_ptr -Wl,--export=threedoh_aud
 SRCS  = src/freedo/Clio.c src/freedo/DSP.c src/freedo/DiagPort.c src/freedo/Iso.c src/freedo/Madam.c
 SRCS += src/freedo/SPORT.c src/freedo/XBUS.c src/freedo/_3do_sys.c src/freedo/arm.c src/freedo/bitop.c
 SRCS += src/freedo/frame.c src/freedo/freedo_fixedpoint_math.c src/freedo/quarz.c src/freedo/vdlp.c
+SRCS += src/freedo/prng16.c src/freedo/prng32.c
 SRCS += src/core/threedoh_core.c src/platform/wasm/wasm_fs.c src/platform/wasm/wasm_input.c src/platform/wasm/wasm_sound.c src/platform/wasm/threedoh_wasm.c src/wasm/freestanding/wasm_runtime.c
 
 OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SRCS))

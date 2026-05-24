@@ -42,6 +42,7 @@ extern int speedfixes;
 
 #define ARM_FAULT_MADAM_RUNAWAY 9u
 #define MADAM_STRICT_MAX_CCB 4096u
+#define MASK_24BIT 0x00FFFFFFu
 /*
  * MADAM/CEL is not a CPU.  Real hardware normally clips, truncates, or
  * completes malformed sprite work rather than raising an ARM data abort.
@@ -947,7 +948,7 @@ int _madam_HandleCEL(void)
 			return CELCYCLES;
 		}
 		//1st step -- parce CCB and load it into registers
-		CURRENTCCB = NEXTCCB & 0xfffffc;
+		CURRENTCCB = NEXTCCB & MASK_24BIT;
 		if ((CURRENTCCB >> 20) > 2) {
 			_madam_FSM = FSM_IDLE;
 			return CELCYCLES;
@@ -970,12 +971,12 @@ int _madam_HandleCEL(void)
 		Flag = 0;
 		PLUTF = PDATF = NCCBF = 0;
 
-		NEXTCCB = mread(CURRENTCCB) & (~3);
+		NEXTCCB = mread(CURRENTCCB) & MASK_24BIT;
 
 
-		if (!(CCBFLAGS & CCB_NPABS)) {
+		if (NEXTCCB != 0 && !(CCBFLAGS & CCB_NPABS)) {
 			NEXTCCB += CURRENTCCB + 4;
-			NEXTCCB &= 0xffffff;
+			NEXTCCB &= MASK_24BIT;
 		}
 		if (NEXTCCB == 0)
 			NCCBF = 1;
@@ -985,24 +986,24 @@ int _madam_HandleCEL(void)
 		CURRENTCCB += 4;
 
 
-		PDATA = mread(CURRENTCCB) & (~3);
+		PDATA = mread(CURRENTCCB) & MASK_24BIT;
 		//if((PDATA==0))
 		//	PDATF=1;
 		if (!(CCBFLAGS & CCB_SPABS)) {
 			PDATA += CURRENTCCB + 4;
-			PDATA &= 0xffffff;
+			PDATA &= MASK_24BIT;
 		}
 		if ((PDATA >> 20) > 2)
 			PDATF = 1;
 		CURRENTCCB += 4;
 
 		if ((CCBFLAGS & CCB_LDPLUT)) {
-			PLUTDATA = mread(CURRENTCCB) & (~3);
+			PLUTDATA = mread(CURRENTCCB) & MASK_24BIT;
 			//if((PLUTDATA==0))
 			//    PLUTF=1;
 			if (!(CCBFLAGS & CCB_PPABS)) {
 				PLUTDATA += CURRENTCCB + 4;
-				PLUTDATA &= 0xffffff;
+				PLUTDATA &= MASK_24BIT;
 			}
 			if ((PLUTDATA >> 20) > 2)
 				PLUTF = 1;

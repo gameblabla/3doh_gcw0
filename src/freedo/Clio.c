@@ -27,6 +27,7 @@
 #include "XBUS.h"
 #include "arm.h"
 #include "DSP.h"
+#include "prng32.h"
 
 #define DECREMENT    0x1
 #define RELOAD       0x2
@@ -241,8 +242,6 @@ void _clio_Load(void *buff)
 #define CURLEN Mregs[base + 4]
 #define RLDADR Mregs[base + 8]
 #define RLDLEN Mregs[base + 0xc]
-
-extern int fastrand(void);
 
 static bool clio_addr_is_timer(uint32_t addr)
 {
@@ -717,7 +716,9 @@ uint32_t _clio_Peek(uint32_t addr)
 		DSPA += 0x300;
 		return (_dsp_ReadIMem(DSPA));
 	} else if (addr == 0x17F0)
-		return fastrand();
+		return prng32();
+	else if (addr == 0x3c)
+		return prng32();
 	else if (addr == 0x17D0) //Read DSP/ARM Semaphore
 		return _dsp_ARMread2sema4();
 	else if (addr >= 0x100 && addr <= 0x17c)

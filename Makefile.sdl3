@@ -20,6 +20,7 @@ CORE_SRCS = \
 	src/freedo/frame.c src/freedo/Madam.c src/freedo/vdlp.c src/freedo/_3do_sys.c \
 	src/freedo/bitop.c src/freedo/DSP.c src/freedo/Iso.c src/freedo/SPORT.c \
 	src/freedo/XBUS.c src/freedo/freedo_fixedpoint_math.c \
+	src/freedo/prng16.c src/freedo/prng32.c \
 	src/cdrom.c src/cuefile.c src/config.c src/input_script.c src/core/threedoh_core.c
 
 SRCS = $(CORE_SRCS) src/platform/sdl3/threedoh_sdl3.c src/main_hosted.c

@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <time.h>
 #include "retro_inline.h"
 
 #include "freedocore.h"
@@ -40,6 +41,8 @@
 #include "fs.h"
 #include "sound.h"
 #include "input.h"
+#include "prng16.h"
+#include "prng32.h"
 
 extern void* Getp_NVRAM(void);
 extern void* Getp_ROMS(void);
@@ -57,8 +60,13 @@ extern char biosFile[128];
 int _3do_Init(void)
 {
 	int i;
+	uint32_t prng_seed;
 	uint8_t *Memory;
 	uint8_t *rom;
+
+	prng_seed = (uint32_t)time(NULL);
+	prng16_seed(prng_seed);
+	prng32_seed(prng_seed ^ 0x9e3779b9u);
 
 	Memory = _arm_Init();
 
