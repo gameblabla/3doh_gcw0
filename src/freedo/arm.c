@@ -168,6 +168,7 @@ uint32_t mreadb(uint32_t addr);
 void mwriteb(uint32_t addr, uint32_t val);
 uint32_t mreadw(uint32_t addr);
 void mwritew(uint32_t addr, uint32_t val);
+void _arm_SetCPSR(uint32_t a);
 
 #define MAS_Access_Exept	arm.MAS_Access_Exept
 #define pRam			arm.Ram
@@ -253,6 +254,16 @@ void _arm_Load(void *buff)
 
 static INLINE void load(uint32_t rn, uint32_t val)
 {
+	/* ARM26 R15 writes carry NZCVIF and mode bits around the 26-bit PC. */
+	if (rn == 15 && (val & 0xfc000003u)) {
+		uint32_t psr = (val & 0xf0000000u) |
+		               ((val & 0x08000000u) ? 0x80u : 0u) |
+		               ((val & 0x04000000u) ? 0x40u : 0u) |
+		               0x10u | (val & 3u);
+		_arm_SetCPSR(psr);
+		RON_USER[15] = val & 0x03fffffcu;
+		return;
+	}
 	RON_USER[rn] = val;
 }
 
@@ -2413,7 +2424,7 @@ uint32_t mreadb(uint32_t addr)
 void  loadusr(uint32_t n, uint32_t val)
 {
 	if (n == 15) {
-		RON_USER[15] = val;
+		load(15, val);
 		return;
 	}
 

@@ -13,7 +13,7 @@ extern void* Getp_RAMS(void);
 
 static void print_diag(const char *prefix, unsigned long frame)
 {
-    printf("%s frame=%lu fault=%u pc=%08x addr=%08x arm_pc=%08x cpsr=%08x r0=%08x r1=%08x r2=%08x r3=%08x r4=%08x r12=%08x r14=%08x arm_fiq=%u unalign_pf=%u/%08x/%08x mirror_pf=%u/%08x/%08x highram_r=%u/%08x/%08x highram_w=%u/%08x/%08x "
+    printf("%s frame=%lu fault=%u pc=%08x addr=%08x arm_pc=%08x cpsr=%08x r0=%08x r1=%08x r2=%08x r3=%08x r4=%08x r9=%08x r10=%08x r11=%08x r12=%08x r14=%08x arm_fiq=%u unalign_pf=%u/%08x/%08x mirror_pf=%u/%08x/%08x highram_r=%u/%08x/%08x highram_w=%u/%08x/%08x "
            "dspres=%u dspmir=%u dspaddr=%08x dspdetail=%08x "
            "dsp_run=%u/%u dsp_reset=%u dsp_int=%u dsp_intval=%04x dsp_pc=%03x dsp_status=%08x dsp_cnt=%u dsp_prld=%u dsp_ticks=%u dsp_reload=%u dsp_frames=%u dsp_sleep=%u dsp_defer=%u dsp_multi=%u audlock=%u/%u/%04x "
            "sema_arm_w=%u sema_arm_r=%u sema_dsp_w=%u sema_dsp_ack=%u "
@@ -25,7 +25,8 @@ static void print_diag(const char *prefix, unsigned long frame)
            prefix ? prefix : "diag", frame,
            threedoh_core_last_fault_type(), threedoh_core_last_fault_pc(), threedoh_core_last_fault_address(),
            threedoh_core_arm_current_pc(), threedoh_core_arm_current_cpsr(),
-           arm.USER[0], arm.USER[1], arm.USER[2], arm.USER[3], arm.USER[4], arm.USER[12], arm.USER[14],
+           arm.USER[0], arm.USER[1], arm.USER[2], arm.USER[3], arm.USER[4],
+           arm.USER[9], arm.USER[10], arm.USER[11], arm.USER[12], arm.USER[14],
            threedoh_core_arm_fiq_entry_count(),
            threedoh_core_arm_unaligned_prefetch_count(),
            threedoh_core_arm_unaligned_prefetch_last(),
