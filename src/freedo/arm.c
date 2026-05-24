@@ -605,6 +605,59 @@ void _arm_ClearFault(void)
 	LAST_FAULT_TYPE = ARM_FAULT_NONE;
 }
 
+
+#define DIPIR_QSI_ADDR                  0x0000020cu
+#define DIPIR_QSI_HLE_INSN              0xeafffffeu /* B . */
+#define SYSINFO_BADTAG                  0xffffffffu
+#define SYSINFO_TAG_FIELDFREQ           0x00010001u
+#define SYSINFO_TAG_GRAPHDISPSUPP       0x00020004u
+#define SYSINFO_PAL_SUPPORTED           0x00000002u
+#define SYSINFO_PAL_DFLT                0x00000200u
+#define SYSINFO_PAL_CURDISP             0x00020000u
+#define SYSINFO_FREQ_50HZ               50u
+
+static int arm_romqsi_tag_supported(uint32_t tag)
+{
+	switch (tag) {
+	case SYSINFO_TAG_FIELDFREQ:
+	case SYSINFO_TAG_GRAPHDISPSUPP:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static int arm_romqsi_hook_installed(void)
+{
+	/* The CD-ROM Portfolio fallback already describes an NTSC Opera system.
+	 * Install the ROMQSI HLE only when the emulated machine is PAL, and only
+	 * for the tags whose fallback value is wrong for PAL.  The hook is exposed
+	 * virtually through reads from DIPIR_QSI_ADDR so low RAM is not patched.
+	 */
+	return pRam != NULL && _clio_GetVideoStandard() && arm_romqsi_tag_supported(RON_USER[0]);
+}
+
+static int arm_execute_romqsi_hle(void)
+{
+	uint32_t ret;
+
+	switch (RON_USER[0]) {
+	case SYSINFO_TAG_FIELDFREQ:
+		ret = SYSINFO_FREQ_50HZ;
+		break;
+	case SYSINFO_TAG_GRAPHDISPSUPP:
+		ret = SYSINFO_PAL_SUPPORTED | SYSINFO_PAL_DFLT | SYSINFO_PAL_CURDISP;
+		break;
+	default:
+		ret = SYSINFO_BADTAG;
+		break;
+	}
+
+	RON_USER[0] = ret;
+	REG_PC = RON_USER[14];
+	return SCYCLE + NCYCLE;
+}
+
 static void arm_enter_data_abort(uint32_t addr, uint32_t type)
 {
 	if (BUS_FAULTED)
@@ -2085,6 +2138,8 @@ int _arm_Execute(void)
 	if (fetch_pc != REG_PC)
 		REG_PC = fetch_pc;
 	current_instr_pc = fetch_pc;
+	if (fetch_pc == DIPIR_QSI_ADDR && arm_romqsi_hook_installed())
+		return arm_execute_romqsi_hle();
 	cmd = mreadw(fetch_pc);
 	if (MAS_Access_Exept)
 		return SCYCLE + NCYCLE;
@@ -2320,6 +2375,8 @@ uint32_t mreadw(uint32_t addr)
 
 	if (pa < 0x00300000) {
 		arm_note_highram_read(pa);
+		if ((pa & ~3u) == DIPIR_QSI_ADDR && arm_romqsi_hook_installed())
+			return DIPIR_QSI_HLE_INSN;
 		return mread_ram32(pa, cacheable);
 	}
 
