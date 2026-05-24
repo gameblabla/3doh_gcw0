@@ -53,7 +53,7 @@
 #define SUBVFLAG(A, B, rd) ( ((((A)&~(B)&~rd) & TOPBIT) || ((~(A)&(B)&rd) & TOPBIT)) ? 1 : 0 )
 
 #define WAVELET (11025)
-#define DSP_STRICT_MAX_INSTRUCTIONS 4096u
+#define DSP_PROGRAM_TIMESLICE_INSTRUCTIONS 65536u
 #define ARM_FAULT_DSP_RUNAWAY 8u
 #define ARM_FAULT_DSP_RESOURCE 14u
 
@@ -572,9 +572,11 @@ static void _dsp_ExecuteProgramFrame(void)
 		union ITAG inst;
 
 		do {
-			if (_arm_GetStrictBusFaults() && ++strict_steps > DSP_STRICT_MAX_INSTRUCTIONS) {
-				_arm_DataAbort(0x03401800u + ((uint32_t)(dregs.PC & 0x3ff) << 1), ARM_FAULT_DSP_RUNAWAY);
-				flags.Running = false;
+			if (++strict_steps > DSP_PROGRAM_TIMESLICE_INSTRUCTIONS) {
+				/* Some valid DSP programs run long loops without SLEEP.
+				 * Yield this host slice instead of raising a strict ARM
+				 * fault; invalid DSP PCs below remain strict faults. */
+				Work = false;
 				break;
 			}
 			if (_arm_GetStrictBusFaults() && dregs.PC >= 0x400) {
