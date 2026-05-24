@@ -311,7 +311,7 @@ threedoh_platform *threedoh_platform_create(void)
         p->remap_button = -1;
         p->integer_scale = true;
         p->linear_filter = false;
-        p->auto_crop = true;
+        p->auto_crop = false;
         p->frame_limiter = true;
         p->vsync = true;
         p->target_hz = 60;

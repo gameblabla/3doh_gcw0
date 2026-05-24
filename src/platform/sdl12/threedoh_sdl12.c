@@ -96,7 +96,7 @@ int threedoh_platform_init(threedoh_platform *platform, const char *title,
     snprintf(platform->title, sizeof(platform->title), "%s", title ? title : "3DOh");
     platform->target_hz = 60;
     platform->limiter_primed = 0;
-    platform->auto_crop = 1;
+    platform->auto_crop = 0;
     SDL_WM_SetCaption(platform->title, NULL);
     SDL_ShowCursor(SDL_DISABLE);
     platform->screen = SDL_SetVideoMode(width, height, bpp, flags);
