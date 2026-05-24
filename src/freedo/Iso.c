@@ -1047,15 +1047,28 @@ void* _xbplug_MainDevice(int proc, void* data)
 	case XBP_GET_POLL:
 		return (void*)(uintptr_t)isodrive->Poll;
 	case XBP_DESTROY:
+		if (isodrive) {
+			free(isodrive);
+			isodrive = NULL;
+		}
 		break;
 	case XBP_GET_SAVESIZE:
 		tmp = sizeof(struct cdrom_Device);
 		return (void*)(uintptr_t)tmp;
 	case XBP_GET_SAVEDATA:
-		memcpy(data, &isodrive, sizeof(struct cdrom_Device));
+		if (!isodrive || !data)
+			return NULL;
+		memcpy(data, isodrive, sizeof(*isodrive));
 		break;
 	case XBP_SET_SAVEDATA:
-		//memcpy(&isodrive, data, sizeof(struct cdrom_Device));
+		if (!data)
+			return NULL;
+		if (!isodrive) {
+			isodrive = (struct cdrom_Device*)calloc(1, sizeof(*isodrive));
+			if (!isodrive)
+				return NULL;
+		}
+		memcpy(isodrive, data, sizeof(*isodrive));
 		return (void*)1;
 	}
 	;

@@ -1,0 +1,18 @@
+Save-state crash fix
+====================
+
+The CD-ROM XBUS device save handler copied from &isodrive, the address of the
+cdrom_Device pointer, for sizeof(struct cdrom_Device) bytes. That read past the
+pointer object and serialized unrelated memory. On protected/runtime-checked
+builds this can fault immediately when saving; on permissive builds it produces
+invalid state data.
+
+Fixes:
+- XBP_GET_SAVEDATA now copies from the allocated cdrom_Device object.
+- XBP_SET_SAVEDATA now restores the cdrom_Device object instead of being a no-op.
+- XBP_DESTROY now releases the cdrom_Device allocation.
+- State loads now verify the inner FreeDO save payload layout before applying it,
+  and reject mismatched/corrupt save files instead of indexing blindly.
+
+The fix is in shared FreeDO/core code, so SDL 1.2, SDL3, and wasm-clang use the
+same corrected state serialization path.

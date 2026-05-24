@@ -1,0 +1,19 @@
+Auto-crop geometry update
+=========================
+
+Auto-crop now treats the detected crop rectangle as the active video size.
+
+Windowed SDL3:
+- When the stable crop changes, the client window is resized to the crop aspect instead of drawing a cropped image into the old 4:3 window.
+- Vertical letterbox removal preserves the current window width and adjusts height; horizontal pillarbox removal preserves height and adjusts width.
+- Integer/aspect scaling keeps integer-sized output when that menu option is enabled.
+
+Fullscreen SDL3 and SDL1.2:
+- The scaler now computes its destination rectangle from the cropped source dimensions, not from the original 320x240/320x288 frame.
+- This removes source-frame black borders before aspect scaling, while still preserving display aspect unless stretch scaling is explicitly selected.
+
+WASM:
+- The canvas backing size and CSS stage aspect follow the stable crop rectangle.
+- Fullscreen uses the cropped aspect ratio through the same CSS stage sizing.
+
+The detector is also more aggressive: it accepts strongly letterboxed/pillarboxed content instead of rejecting anything below 60 percent of the original frame.

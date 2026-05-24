@@ -93,6 +93,20 @@ struct VDLDatum {
 
 static struct VDLDatum vdl;
 static uint8_t *vram;
+static uint32_t visible_height = THREEDOH_NTSC_SCREEN_HEIGHT;
+static bool vdl_list_active = false;
+
+void _vdl_SetVisibleHeight(uint32_t height)
+{
+	if (height != THREEDOH_PAL1_SCREEN_HEIGHT)
+		height = THREEDOH_NTSC_SCREEN_HEIGHT;
+	visible_height = height;
+}
+
+uint32_t _vdl_GetVisibleHeight(void)
+{
+	return visible_height;
+}
 
 uint32_t _vdl_SaveSize(void)
 {
@@ -147,7 +161,10 @@ static INLINE void VDLExec(void)
 	if (tmp == 0) { // End of list
 		linedelay = 511;
 		doloadclut = false;
+		vdl_list_active = false;
+		CLUTDMA.raw = 0;
 	} else {
+		vdl_list_active = true;
 		CLUTDMA.raw = tmp;
 
 		if (CLUTDMA.dmaw.currover)
@@ -162,7 +179,7 @@ static INLINE void VDLExec(void)
 
 		CURRENTVDL += 16;
 
-		int nmcmd = CLUTDMA.dmaw.numword; //nmcmd-=4;?
+		uint32_t nmcmd = CLUTDMA.dmaw.numword; //nmcmd-=4;?
 		for (i = 0; i < nmcmd; i++) {
 			int cmd = vmreadw(CURRENTVDL);
 			CURRENTVDL += 4;
@@ -183,9 +200,11 @@ static INLINE void VDLExec(void)
 					CLUTB[coloridx] = (cmd & VDL_B_MASK) >> VDL_B_SHIFT;
 			} else if ((cmd & 0xff000000) == VDL_BACKGROUND) {
 				if (ifgnorflag) continue;
-				BACKGROUND = ((     cmd & 0xFF    ) << 16) |
-					     (( cmd & 0xFF00 )) |
-					     (((cmd >> 16) & 0xFF) );
+				/* Keep the VDL background in canonical 0xRRGGBB form.
+				 * The old renderer stored this as BGR for SDL-era 16-bit expansion,
+				 * which breaks the 32-bit browser path and true custom-CLUT output.
+				 */
+				BACKGROUND = cmd & 0x00FFFFFF;
 			} else if ((cmd & 0xE0000000) == 0xc0000000) {
 				if (ifgnorflag) continue;
 				OUTCONTROLL = cmd;
@@ -211,9 +230,17 @@ static INLINE uint32_t VRAMOffEval(uint32_t addr, uint32_t line)
 	return ((((~addr) & 2) << 18) + ((addr >> 2) << 1) + 1024 * 512 * line);
 }
 
+static INLINE void CopyVDLLine(uint16_t *dst, uint32_t bitmapAddr)
+{
+	uint32_t i = THREEDOH_MAX_SCREEN_WIDTH;
+	uint32_t *src = (uint32_t*)(vram + ((bitmapAddr ^ 2) & 0x0FFFFF));
+	while (i--)
+		*dst++ = *(uint16_t*)(src++);
+}
+
 void _vdl_DoLineNew(uint32_t line2x, struct VDLFrame *frame)
 {
-	uint32_t y, i;
+	uint32_t y;
 	uint32_t line = line2x & 0x7ff;
 
 	if (line == 0) {
@@ -223,23 +250,21 @@ void _vdl_DoLineNew(uint32_t line2x, struct VDLFrame *frame)
 		VDLExec();
 	}
 
-	y = (line - (16));
+	y = (line - THREEDOH_VDL_FIRST_VISIBLE_LINE);
 
 	if (linedelay == 0 /*&& doloadclut*/)
 		VDLExec();
 
-	if (y < 240) // 256???
+	if (y < visible_height)
 	{
-		if (CLUTDMA.dmaw.enadma) {
-			{
-				uint16_t *dst;
-				uint32_t *src;
-				dst = frame->lines[y].line;
-				src = (uint32_t*)(vram + ((PREVIOUSBMP ^ 2) & 0x0FFFFF));
-				i = 320;
-				while (i--)
-					*dst++ = *(uint16_t*)(src++);
-			}
+		frame->lines[y].xHasBitmapLine = 0;
+		if (vdl_list_active && CLUTDMA.dmaw.enadma) {
+			frame->lines[y].xHasBitmapLine = 1;
+			CopyVDLLine(frame->lines[y].line, PREVIOUSBMP);
+#if BPP_TYPE == 32
+			CopyVDLLine(frame->lines[y].currentLine, CURRENTBMP);
+			frame->lines[y].xHasCurrentLine = 1;
+#endif
 			memcpy(frame->lines[y].xCLUTB, CLUTB, 32);
 			memcpy(frame->lines[y].xCLUTG, CLUTG, 32);
 			memcpy(frame->lines[y].xCLUTR, CLUTR, 32);
@@ -247,7 +272,7 @@ void _vdl_DoLineNew(uint32_t line2x, struct VDLFrame *frame)
 		frame->lines[y].xOUTCONTROLL = OUTCONTROLL;
 		frame->lines[y].xCLUTDMA = CLUTDMA.raw;
 		frame->lines[y].xBACKGROUND = BACKGROUND;
-	} // //if((y>=0) && (y<240))
+	} // visible line
 
 	if (CURRENTBMP & 2)
 		CURRENTBMP += MODULO * 4 - 2;
@@ -274,6 +299,7 @@ void _vdl_Init(uint8_t *vramstart)
 	uint32_t i;
 
 	vram = vramstart;
+	vdl_list_active = false;
 
 	static const uint32_t StartupVDL[] =
 	{       // Startup VDL at addres 0x2B0000

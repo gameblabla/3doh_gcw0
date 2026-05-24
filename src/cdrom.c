@@ -93,12 +93,21 @@ void fsReadBios(char *biosFile, void *prom)
 int fsOpenIso(char *path)
 {
    cueFile *cue_file = cue_get(path);
+   int path_is_cue = cue_is_cue_path(path);
+   const char *cd_image_path;
+
+   if (path_is_cue && (!cue_file || !cue_file->cd_image))
+   {
+      cue_free(cue_file);
+      return 0;
+   }
+
    fsDetectCDFormat(path, cue_file);
 
-   const char *cd_image_path = cue_is_cue_path(path) ? cue_file->cd_image : path;
+   cd_image_path = path_is_cue ? cue_file->cd_image : path;
    fcdrom = fopen(cd_image_path, "rb");
 
-   free(cue_file);
+   cue_free(cue_file);
 
    if(!fcdrom)
       return 0;

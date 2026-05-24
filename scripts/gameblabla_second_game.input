@@ -1,0 +1,7 @@
+# Gameblabla compilation: enter game 2 and choose first sub-game.
+# This is the path shown to crash on real hardware.
+1550f:P
+1930f:DOWN
+1980f:A
+2350f:A
+2420f:A

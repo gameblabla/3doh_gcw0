@@ -1,0 +1,3 @@
+#ifndef THREEDOH_WASM_SYS_STAT_H
+#define THREEDOH_WASM_SYS_STAT_H
+#endif

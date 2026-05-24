@@ -1,0 +1,17 @@
+BIN/CUE support fix
+===================
+
+Changes made:
+- Hardened native CUE parsing and CUE opening paths so invalid/missing cue metadata fails cleanly instead of dereferencing NULL.
+- Fixed CUE image path resolution for same-directory cue/bin pairs, including paths with spaces and Windows separators.
+- Added browser-side BIN/CUE pair loading. Select/drop the .cue and referenced .bin together in the game image slot.
+- Propagated CUE sector layout from JavaScript to wasm so MODE1/2048, MODE1/2352, and MODE2/2352 use the correct 2048-byte payload offset.
+- Kept raw .iso loading behavior unchanged; raw .bin without CUE is treated as MODE1/2352 when the file size is divisible by 2352, otherwise MODE1/2048.
+
+Smoke tests performed:
+- Native fsOpenIso/fsReadBlock/fsReadDiscSize against Doom (USA).cue and Doom (USA).bin.
+- wasm-clang rebuild.
+- Node WebAssembly start/frame smoke test with the uploaded 3DO BIOS bytes and Doom3DO MODE1/2352 BIN data: threedoh_start() returned 0 and threedoh_frame() returned 1.
+
+BIOS note:
+- bios.bin is not bundled. Rename your BIOS file to bios.bin or load it through the browser BIOS slot.

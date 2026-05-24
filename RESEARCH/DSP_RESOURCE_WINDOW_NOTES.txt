@@ -1,0 +1,8 @@
+DSPP resource/window modifications applied from chatlog.txt
+
+- Adds strict DSPP resource fault tracking separate from generic CLIO/DSP bounds.
+- Flags DSP NMem execution/write attempts at >= 0x400 as fault type 14 when strict bus and strict DSPP resources are enabled.
+- Narrows CPU-visible DSPP EI write windows to the primary EI resource range while preserving legacy mirror wrapping when --compat-dsp is used.
+- Narrows CPU-visible DSPP EO read windows to the primary EO resource range plus the documented/status aliases at 0x3eb..0x3ef.
+- Exposes DSPP resource diagnostic counters through the shared core and wasm exports.
+- Native SDL hosted builds accept --strict-dsp/--compat-dsp.

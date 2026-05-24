@@ -16,6 +16,7 @@ typedef struct {
 } cueFile;
 
 extern cueFile *cue_get(const char *path);
+extern void cue_free(cueFile *cue);
 extern const char *cue_get_cd_format_name(CD_format cd_format);
 extern int cue_is_cue_path(const char *path);
 

@@ -1,0 +1,3 @@
+#ifndef THREEDOH_WASM_MATH_H
+#define THREEDOH_WASM_MATH_H
+#endif

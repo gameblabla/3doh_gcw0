@@ -40,6 +40,100 @@ extern int unknownflag11;
 extern int fixmode;
 extern int speedfixes;
 
+#define ARM_FAULT_MADAM_RUNAWAY 9u
+#define MADAM_STRICT_MAX_CCB 4096u
+/*
+ * MADAM/CEL is not a CPU.  Real hardware normally clips, truncates, or
+ * completes malformed sprite work rather than raising an ARM data abort.
+ * Keep a large host-side budget to prevent emulator lockups, but treat
+ * budget exhaustion as a soft CEL termination unless explicitly requested
+ * through _madam_SetStrictRunawayFaults().
+ */
+#define MADAM_CEL_WORK_BUDGET (320u * 288u * 64u)
+static unsigned int madam_cel_work_counter;
+static unsigned int madam_soft_clip_counter;
+static bool madam_strict_runaway_faults;
+
+static bool madam_strict_fault(uint32_t fallback_addr)
+{
+	if (!_arm_GetStrictBusFaults())
+		return false;
+	_arm_DataAbort(fallback_addr, ARM_FAULT_MADAM_RUNAWAY);
+	return true;
+}
+
+static bool madam_guard_work(unsigned int units)
+{
+	/*
+	 * This is a host runaway guard, not a hardware exception.  OptiDoom and
+	 * other legitimate engines can ask MADAM to do far more than one 320x288
+	 * screen worth of span work in a frame, especially with transformed CELs.
+	 * v16 incorrectly converted that condition into an ARM abort.
+	 */
+	if (units > MADAM_CEL_WORK_BUDGET || madam_cel_work_counter > MADAM_CEL_WORK_BUDGET - units) {
+		madam_soft_clip_counter++;
+		if (_arm_GetStrictBusFaults() && madam_strict_runaway_faults) {
+			_arm_DataAbort(0x03300000u, ARM_FAULT_MADAM_RUNAWAY);
+		}
+		return true;
+	}
+	madam_cel_work_counter += units;
+	return false;
+}
+
+#define MADAM_MAIN_RAM_BYTES (3u * 1024u * 1024u)
+
+static bool madam_mem_range_valid(uint32_t addr, uint32_t len)
+{
+	if (len == 0)
+		return true;
+	if (addr >= MADAM_MAIN_RAM_BYTES)
+		return false;
+	if (len > MADAM_MAIN_RAM_BYTES - addr)
+		return false;
+	return true;
+}
+
+static bool madam_mem_fault(uint32_t addr)
+{
+	if (!_arm_GetStrictBusFaults())
+		return false;
+	_arm_DataAbort(addr, ARM_FAULT_MADAM_RUNAWAY);
+	return true;
+}
+
+static bool madam_require_mem(uint32_t addr, uint32_t len)
+{
+	if (!_arm_GetStrictBusFaults())
+		return false;
+	if (!madam_mem_range_valid(addr, len))
+		return madam_mem_fault(addr);
+	return false;
+}
+
+static bool madam_require_cel_span(uint32_t start, uint32_t end)
+{
+	if (!_arm_GetStrictBusFaults())
+		return false;
+	if (end < start)
+		return madam_mem_fault(start);
+	return madam_require_mem(start, end - start);
+}
+
+static bool madam_guard_cel_dims(int w, int h, uint32_t ccb)
+{
+	/* Treat impossible PRE dimensions as a skipped CEL by default.  They are
+	 * not reliable evidence of a hardware crash, and MADAM strictness should
+	 * not kill valid software that intentionally leans on clipping. */
+	if (w < 0 || h < 0 || w > 8192 || h > 8192) {
+		madam_soft_clip_counter++;
+		if (_arm_GetStrictBusFaults() && madam_strict_runaway_faults)
+			return madam_mem_fault(ccb ? ccb : 0x03300000u);
+		return true;
+	}
+	return false;
+}
+
 /* === CCB control word flags === */
 #define CCB_SKIP        0x80000000
 #define CCB_LAST        0x40000000
@@ -581,6 +675,21 @@ static INLINE int quickDivide(int a, int b)
 //void MapCoord(poly *pol);
 //void RenderPoly(void);
 
+void _madam_SetStrictRunawayFaults(bool enabled)
+{
+	madam_strict_runaway_faults = enabled;
+}
+
+bool _madam_GetStrictRunawayFaults(void)
+{
+	return madam_strict_runaway_faults;
+}
+
+uint32_t _madam_GetSoftClipCount(void)
+{
+	return madam_soft_clip_counter;
+}
+
 unsigned int  _madam_Peek(unsigned int addr)
 {
 	//	if((addr>=0x400)&&(addr<=0x53f))
@@ -815,6 +924,7 @@ int CCBCOUNTER;
 int _madam_HandleCEL(void)
 {
 	__smallcycles = CELCYCLES = 0;
+	madam_cel_work_counter = 0;
 	if (NEXTCCB != 0)
 		CCBCOUNTER = 0;
 	STATBITS |= SPRON;
@@ -824,6 +934,14 @@ int _madam_HandleCEL(void)
 	while ((NEXTCCB != 0) && (!Flag)) {
 		//if(_madam_FSM==FSM_INPROCESS)
 		CCBCOUNTER++;
+		if (CCBCOUNTER > (int)MADAM_STRICT_MAX_CCB) {
+			madam_soft_clip_counter++;
+			if (_arm_GetStrictBusFaults() && madam_strict_runaway_faults)
+				madam_strict_fault(CURRENTCCB ? CURRENTCCB : 0x03300000u);
+			_madam_FSM = FSM_IDLE;
+			NEXTCCB = 0;
+			return CELCYCLES;
+		}
 		if ((NEXTCCB == 0) || (Flag)) {
 			_madam_FSM = FSM_IDLE;
 			return CELCYCLES;
@@ -1046,6 +1164,12 @@ void DMAPBus(void)
 	mregs[0x570] += 4;
 	mregs[0x578] += 4;
 
+	if (_arm_GetStrictBusFaults() && mregs[0x574] > MADAM_MAIN_RAM_BYTES) {
+		madam_mem_fault(mregs[0x570]);
+		mregs[0x574] = 0xfffffffc;
+		return;
+	}
+
 	while ((int)mregs[0x574] > 0) {
 		if (i < 5) WriteIO(mregs[0x570], ((unsigned int*)PBUSQueue)[i]);
 		else WriteIO(mregs[0x570], 0xffffffff);
@@ -1085,6 +1209,9 @@ void _madam_Init(uint8_t *memory)
 	MAPPING = 1;
 
 	_madam_FSM = FSM_IDLE;
+	madam_cel_work_counter = 0;
+	madam_soft_clip_counter = 0;
+	madam_strict_runaway_faults = false;
 
 	for (i = 0; i < 2048; i++)
 		mregs[i] = 0;
@@ -1175,6 +1302,8 @@ unsigned int  mread(unsigned int addr)
 #ifdef SAFEMEMACCESS
 	//	addr&=0x3FFFFF;
 #endif
+	if (madam_require_mem(addr, 4))
+		return 0;
 	val = _mem_read32(addr);
 	CELCYCLES += 1;
 	//exteraclocker();
@@ -1186,6 +1315,8 @@ void  mwrite(unsigned int addr, unsigned int val)
 #ifdef SAFEMEMACCESS
 	addr &= 0x3FFFFF;
 #endif
+	if (madam_require_mem(addr, 4))
+		return;
 	_mem_write32(addr, val);
 	CELCYCLES += 2;
 	//exteraclocker();
@@ -1197,6 +1328,8 @@ void  mwriteh(unsigned int addr, uint16_t val)
 #ifdef SAFEMEMACCESS
 	addr &= 0x3fffff;
 #endif
+	if (madam_require_mem(addr, 2))
+		return;
 	CELCYCLES += 2;
 #ifdef MSB_FIRST
 	_mem_write16((addr), val);
@@ -1564,7 +1697,7 @@ unsigned int * _madam_GetRegs(void)
 void  DrawPackedCel_New(void)
 {
 	sf = 100000;
-	uint16_t CURPIX, LAMV;
+	uint16_t CURPIX, LAMV = 0;
 
 	int lastaddr;
 	int xcur = 0, ycur = 0, xvert, yvert, xdown, ydown, hdx, hdy;
@@ -1601,6 +1734,7 @@ void  DrawPackedCel_New(void)
 
 			//BITCALC=((offset+2)<<2)<<5;
 			lastaddr = start + ((offset + 2) << 2);
+			if (madam_require_cel_span(start, (uint32_t)lastaddr)) break;
 			eor = 0;
 			xcur = xvert;
 			ycur = yvert;
@@ -1616,6 +1750,7 @@ void  DrawPackedCel_New(void)
 			wcnt  = scipw;
 
 			while (!eor) {//while not end of row
+				if (madam_guard_work(1)) { eor = 1; break; }
 
 				const int header = BitReaderBig_Read(&bitoper, 8);
 				type = (header >> 6) & 3;
@@ -1702,6 +1837,7 @@ void  DrawPackedCel_New(void)
 
 			BITCALC = ((offset + 2) << 2) << 5;
 			lastaddr = start + ((offset + 2) << 2);
+			if (madam_require_cel_span(start, (uint32_t)lastaddr)) break;
 
 			eor = 0;
 
@@ -1711,6 +1847,7 @@ void  DrawPackedCel_New(void)
 			yvert += VDY1616;
 
 			while (!eor) {//while not end of row
+				if (madam_guard_work(1)) { eor = 1; break; }
 
 				const int header = BitReaderBig_Read(&bitoper, 8);
 				type = (header >> 6) & 3;
@@ -1723,6 +1860,7 @@ void  DrawPackedCel_New(void)
 					break;
 				case 1: //PACK_LITERAL
 					while (pixcount) {
+						if (madam_guard_work(1)) { pixcount = 0; break; }
 						pixcount--;
 						CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
 
@@ -1773,6 +1911,7 @@ void  DrawPackedCel_New(void)
 
 			BITCALC = ((offset + 2) << 2) << 5;
 			lastaddr = start + ((offset + 2) << 2);
+			if (madam_require_cel_span(start, (uint32_t)lastaddr)) break;
 
 			eor = 0;
 
@@ -1791,6 +1930,7 @@ void  DrawPackedCel_New(void)
 			ydown = yvert;
 
 			while (!eor) {//while not end of row
+				if (madam_guard_work(1)) { eor = 1; break; }
 
 				const int header = BitReaderBig_Read(&bitoper, 8);
 				type = (header >> 6) & 3;
@@ -1804,6 +1944,7 @@ void  DrawPackedCel_New(void)
 				case 1: //PACK_LITERAL
 
 					while (pixcount) {
+						if (madam_guard_work(1)) { pixcount = 0; break; }
 						CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
 						pixcount--;
 						//   if(speedfixes>=0&&speedfixes<=100001) speedfixes=300000;
@@ -1833,6 +1974,7 @@ void  DrawPackedCel_New(void)
 					if (speedfixes >= 0 && speedfixes < 200001 && ((CURPIX > 10000 && CURPIX < 11000) && sdf == 0 /*||(CURPIX>10500&&CURPIX<10650)*/)) speedfixes = 200000;         //(CURPIX>10450&&CURPIX<10470)
 					if (!pproj.Transparent) {
 						while (pixcount) {
+						if (madam_guard_work(1)) { pixcount = 0; break; }
 							pixcount--;
 							if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
 								break;
@@ -1873,7 +2015,7 @@ void  DrawLiteralCel_New(void)
 {
 	sf = 100000;
 	int xcur = 0, ycur = 0, xvert, yvert, xdown, ydown, hdx, hdy;
-	uint16_t CURPIX, LAMV;
+	uint16_t CURPIX, LAMV = 0;
 
 	bpp = BPP[PRE0 & PRE0_BPP_MASK];
 	offsetl = 2;
@@ -1905,7 +2047,9 @@ void  DrawLiteralCel_New(void)
 		PDATA += ((offset + 2) << 2) * TEXTURE_HI_START;
 		if (SPRWI > TEXTURE_WI_LIM) SPRWI = TEXTURE_WI_LIM;
 		for (i = TEXTURE_HI_START; i < TEXTURE_HI_LIM; i++) {
+			if (madam_guard_work(1)) break;
 
+			if (madam_require_mem(PDATA, (uint32_t)((offset + 2) << 2))) break;
 			BitReaderBig_AttachBuffer(&bitoper, PDATA);
 			BITCALC = ((offset + 2) << 2) << 5;
 			xcur = xvert + TEXTURE_WI_START * HDX1616;
@@ -1936,7 +2080,9 @@ void  DrawLiteralCel_New(void)
 			drawHeight = (1 << 16);
 
 		for (i = 0; i < SPRHI; i++) {
+			if (madam_guard_work(1)) break;
 
+			if (madam_require_mem(PDATA, (uint32_t)((offset + 2) << 2))) break;
 			BitReaderBig_AttachBuffer(&bitoper, PDATA);
 			BITCALC = ((offset + 2) << 2) << 5;
 			xcur = xvert;
@@ -1970,6 +2116,8 @@ void  DrawLiteralCel_New(void)
 
 		SPRWI -= ((PRE0 >> 24) & 0xf);
 		for (i = 0; i < SPRHI; i++) {
+			if (madam_guard_work(1)) break;
+			if (madam_require_mem(PDATA, (uint32_t)((offset + 2) << 2))) break;
 			BitReaderBig_AttachBuffer(&bitoper, PDATA);
 			BITCALC = ((offset + 2) << 2) << 5;
 
@@ -2039,6 +2187,7 @@ void  DrawLRCel_New(void)
 	SPRHI = (((PRE0 & PRE0_VCNT_MASK) >> PRE0_VCNT_SHIFT) << 1) + 2; //doom fix
 
 	if (TestInitVisual(0)) return;
+	if (madam_require_mem(PDATA, (uint32_t)offset * (uint32_t)((SPRHI > 0) ? SPRHI : 1))) return;
 	xvert = XPOS1616;
 	yvert = YPOS1616;
 
@@ -2050,6 +2199,7 @@ void  DrawLRCel_New(void)
 		//if(SPRHI>TEXTURE_HI_LIM)SPRHI=TEXTURE_HI_LIM;
 		if (SPRWI > TEXTURE_WI_LIM) SPRWI = TEXTURE_WI_LIM;
 		for (y = TEXTURE_HI_START; y < TEXTURE_HI_LIM; y++) {
+			if (madam_guard_work(1)) break;
 			xcur = xvert + TEXTURE_WI_START * HDX1616;
 			ycur = yvert + TEXTURE_WI_START * HDY1616;
 			xvert += VDX1616;
@@ -2108,6 +2258,7 @@ void  DrawLRCel_New(void)
 	break;
 	default:
 		for (y = 0; y < SPRHI; y++) {
+			if (madam_guard_work(1)) break;
 
 			xcur = xvert;
 			ycur = yvert;
@@ -2215,6 +2366,9 @@ static INLINE int __abs(int val)
 int TestInitVisual(int packed)
 {
 	int xpoints[4], ypoints[4];
+
+	if (madam_guard_cel_dims(SPRWI, SPRHI, CURRENTCCB))
+		return -1;
 
 	if ((!(CCBFLAGS & CCB_ACCW)) && (!(CCBFLAGS & CCB_ACW)))
 		return -1;
@@ -2438,6 +2592,8 @@ void TexelDraw_BitmapRow(uint16_t LAMV, int xcur, int ycur, int cnt)
 {
 	int x;
 	unsigned pixel, framePixel = 0;
+	if (cnt < 0 || madam_guard_work((unsigned int)cnt))
+		return;
 
 	int xp = xcur >> 16;
 	int yp = ycur >> 16;
@@ -2459,6 +2615,8 @@ void TexelDraw_Line(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int cnt)
 {
 	int x;
 	unsigned int pixel = CURPIX;
+	if (cnt < 0 || madam_guard_work((unsigned int)cnt))
+		return;
 	unsigned int nextFramePixel = 0;
 	unsigned int currFramePixel = 0xffffffff;
 
@@ -2493,11 +2651,21 @@ int  TexelDraw_Scale(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int del
 	else if ((HDY1616 > 0) && ((deltay)) > (CLIPYVAL) && (ycur) > (CLIPYVAL))
 		return -1;
 
-	if (xcur == deltax)
+	if (xcur == deltax || ycur == deltay)
 		return 0;
+	if ((TEXEL_INCY == 0 && ycur != deltay) || (TEXEL_INCX == 0 && xcur != deltax) ||
+	    (deltay > ycur && TEXEL_INCY < 0) || (deltay < ycur && TEXEL_INCY > 0) ||
+	    (deltax > xcur && TEXEL_INCX < 0) || (deltax < xcur && TEXEL_INCX > 0)) {
+		madam_soft_clip_counter++;
+		if (_arm_GetStrictBusFaults() && madam_strict_runaway_faults)
+			madam_strict_fault(CURRENTCCB ? CURRENTCCB : 0x03300000u);
+		return -1;
+	}
 
 	for (y = ycur; y != deltay; y += TEXEL_INCY)
-		for (x = xcur; x != deltax; x += TEXEL_INCX)
+		for (x = xcur; x != deltax; x += TEXEL_INCX) {
+			if (madam_guard_work(1))
+				return -1;
 			if (TESTCLIP(x,y)) {
 				if (celNeedsFramePixel) nextFramePixel = readFramebufferPixel(PIXSOURCE, x, y);
 				if (nextFramePixel != currFramePixel) {
@@ -2507,6 +2675,7 @@ int  TexelDraw_Scale(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int del
 				}
 				writeFramebufferPixel(FBTARGET, x, y, pixel);
 			}
+		}
 
 	return 0;
 }
@@ -2573,6 +2742,8 @@ int  TexelDraw_Arbitrary(uint16_t CURPIX, uint16_t LAMV,
 
 	for (; y < maxyt; y++) {
 		int cnt_cross = 0;
+		if (madam_guard_work(1))
+			return -1;
 		if (y < (yB) && y >= (yA)) {
 			xpoints[cnt_cross] = (int)((quickDivide(((xB - xA) * (y - yA)), (yB - yA)) + xA));
 			updowns[cnt_cross++] = 1;
@@ -2626,6 +2797,8 @@ int  TexelDraw_Arbitrary(uint16_t CURPIX, uint16_t LAMV,
 					maxx = xpoints[3];
 					if (maxx > maxxt) maxx = maxxt;
 					for (; x < maxx; x++) {
+						if (madam_guard_work(1))
+							return -1;
 						if (celNeedsFramePixel) nextFramePixel = readFramebufferPixel(PIXSOURCE, x, y);
 						if (nextFramePixel != currFramePixel) {
 							currFramePixel = nextFramePixel;
@@ -2646,6 +2819,8 @@ int  TexelDraw_Arbitrary(uint16_t CURPIX, uint16_t LAMV,
 				if (maxx > maxxt) maxx = maxxt;
 
 				for (; x < maxx; x++) {
+					if (madam_guard_work(1))
+						return -1;
 					if (celNeedsFramePixel) nextFramePixel = readFramebufferPixel(PIXSOURCE, x, y);
 					if (nextFramePixel != currFramePixel) {
 						currFramePixel = nextFramePixel;

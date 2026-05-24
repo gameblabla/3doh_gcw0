@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3DOh WASM</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root { color-scheme: dark; --aspect: 4 / 3; }
+    html, body { margin: 0; width: 100%; height: 100%; background: #050505; color: #eee; font-family: system-ui, sans-serif; overflow: hidden; }
+    body { display: grid; place-items: center; }
+    #stage { position: relative; display: grid; place-items: center; width: min(100vw, calc(100vh * var(--aspect))); aspect-ratio: var(--aspect); background: #000; }
+    #screen { display: block; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; outline: none; touch-action: none; }
+    #status { position: fixed; left: 0.75rem; bottom: 0.55rem; z-index: 5; color: #ddd; opacity: 0.9; font: 12px/1.35 system-ui, sans-serif; text-shadow: 0 1px 2px #000; pointer-events: none; }
+    #top-ui { position: fixed; right: 0.75rem; top: 0.75rem; z-index: 6; display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; max-width: min(38rem, calc(100vw - 1.5rem)); max-height: calc(100vh - 1.5rem); pointer-events: none; }
+    #top-ui > * { pointer-events: auto; }
+    .button-row { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }
+    button, input::file-selector-button { border: 1px solid rgb(255 255 255 / 38%); border-radius: 0.45rem; background: rgb(255 255 255 / 14%); color: #eee; padding: 0.42rem 0.65rem; font: 12px/1.2 system-ui, sans-serif; cursor: pointer; }
+    button:hover, button:focus-visible, input::file-selector-button:hover { background: rgb(255 255 255 / 25%); }
+    button:disabled { opacity: 0.45; cursor: default; }
+
+    #loader { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: clamp(0.75rem, 2vw, 1.5rem); background: radial-gradient(circle at center, rgb(20 20 20 / 84%), rgb(0 0 0 / 94%)); }
+    #loader.hidden { display: none; }
+    .loader-card { width: min(56rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow: auto; border-radius: 1rem; background: rgb(11 11 11 / 96%); border: 2px solid rgb(255 255 255 / 32%); box-shadow: 0 1rem 3rem rgb(0 0 0 / 75%); padding: clamp(1rem, 2.6vw, 1.35rem); font: 13px/1.45 system-ui, sans-serif; }
+    .loader-title { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin-bottom: 0.8rem; }
+    .loader-title h1 { margin: 0; font-size: clamp(1.25rem, 3vw, 1.75rem); line-height: 1.1; letter-spacing: 0.01em; }
+    .loader-title p { margin: 0.3rem 0 0; color: #bbb; }
+    .load-note { border-radius: 0.65rem; border: 1px solid rgb(255 255 255 / 22%); background: rgb(255 255 255 / 8%); padding: 0.7rem 0.85rem; margin-bottom: 0.85rem; color: #ddd; }
+    .drop-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; margin-top: 0.85rem; }
+    .drop-slot { min-height: 12.5rem; border: 4px dashed rgb(255 255 255 / 78%); border-radius: 0.9rem; padding: 1rem; background: linear-gradient(180deg, rgb(255 255 255 / 13%), rgb(255 255 255 / 6%)); display: grid; grid-template-rows: auto auto 1fr auto auto; gap: 0.55rem; align-items: center; text-align: center; outline: 1px solid rgb(255 255 255 / 12%); outline-offset: -0.55rem; cursor: pointer; }
+    .drop-slot:hover, .drop-slot:focus-within { background: linear-gradient(180deg, rgb(255 255 255 / 18%), rgb(255 255 255 / 8%)); border-color: #fff; }
+    .drop-slot.dragover { background: rgb(255 255 255 / 24%); border-color: #fff; transform: scale(1.01); }
+    .drop-slot.ready { border-style: solid; background: linear-gradient(180deg, rgb(90 255 150 / 16%), rgb(255 255 255 / 8%)); }
+    .drop-icon { font-size: 2.2rem; line-height: 1; }
+    .drop-title { font-weight: 800; color: #fff; font-size: 1.05rem; letter-spacing: 0.02em; text-transform: uppercase; }
+    .drop-hint { color: #d5d5d5; font-size: 13px; }
+    .drop-name { min-height: 1.4em; color: #ddd; font-size: 12px; overflow-wrap: anywhere; }
+    .drop-slot input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+    .choose-button { justify-self: center; font-weight: 700; }
+    .file-state { color: #c8c8c8; font-size: 12px; margin-top: 0.8rem; }
+    .video-row { margin-top: 0.85rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; color: #ddd; font-size: 12px; }
+    .video-row select { border: 1px solid rgb(255 255 255 / 32%); border-radius: 0.4rem; background: #161616; color: #eee; padding: 0.35rem 0.45rem; }
+    .start-row { align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: 0.85rem; }
+    #start-button { font-size: 14px; font-weight: 800; padding: 0.65rem 1rem; }
+    @media (max-width: 680px) { .drop-grid { grid-template-columns: 1fr; } .loader-title { flex-direction: column; } .start-row { justify-content: flex-start; } }
+
+    #help-dialog { width: min(34rem, calc(100vw - 2rem)); border: 1px solid rgb(255 255 255 / 32%); border-radius: 0.8rem; background: #101010; color: #eee; box-shadow: 0 1rem 3rem rgb(0 0 0 / 80%); padding: 1rem; }
+    #help-dialog::backdrop { background: rgb(0 0 0 / 60%); }
+    #help-dialog h2 { margin: 0 0 0.55rem; font-size: 1.1rem; }
+    #help-dialog ol { margin: 0.55rem 0 0.8rem 1.2rem; padding: 0; }
+    #help-dialog li { margin: 0.35rem 0; }
+
+    #controls { width: 9.5rem; max-width: 100%; max-height: calc(100vh - 4rem); overflow: auto; border-radius: 0.45rem; background: rgb(0 0 0 / 70%); color: #ddd; font: 12px/1.35 system-ui, sans-serif; box-shadow: 0 0.35rem 1.2rem rgb(0 0 0 / 55%); user-select: none; }
+    #controls[open] { width: min(38rem, calc(100vw - 1.5rem)); }
+    #controls:not([open]) { background: rgb(0 0 0 / 42%); box-shadow: none; }
+    #controls > summary { cursor: pointer; padding: 0.4rem 0.55rem; list-style: none; color: #eee; font-weight: 700; text-align: center; }
+    #controls > summary::-webkit-details-marker { display: none; }
+    .controls-body { padding: 0 0.65rem 0.65rem; }
+    #capture-box { margin: 0.45rem 0 0.65rem; padding: 0.45rem 0.55rem; border: 1px solid rgb(255 255 255 / 24%); border-radius: 0.35rem; background: rgb(255 255 255 / 10%); }
+    #capture-box[hidden] { display: none; }
+    #bindings-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    #bindings-table th, #bindings-table td { border-top: 1px solid rgb(255 255 255 / 15%); padding: 0.25rem 0.3rem; vertical-align: top; text-align: left; white-space: nowrap; }
+    #bindings-table th { color: #fff; font-weight: 700; }
+    .small-button { margin: 0 0.2rem 0.2rem 0; padding: 0.12rem 0.35rem; font-size: 11px; }
+    kbd { border: 1px solid rgb(255 255 255 / 30%); border-radius: 0.25rem; padding: 0.05rem 0.25rem; background: rgb(255 255 255 / 12%); font: 11px/1.4 ui-monospace, monospace; }
+    #audio-prompt { position: fixed; left: 0.75rem; top: 0.75rem; z-index: 4; max-width: min(23rem, calc(100vw - 1.5rem)); border-radius: 0.45rem; background: rgb(0 0 0 / 62%); color: #eee; padding: 0.35rem 0.55rem; font: 12px/1.35 system-ui, sans-serif; user-select: none; pointer-events: none; text-shadow: 0 1px 2px #000; }
+    #audio-prompt[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="screen" width="320" height="240" tabindex="0" aria-label="3DOh emulator screen"></canvas>
+  </div>
+
+  <div id="loader" role="dialog" aria-modal="true" aria-labelledby="loader-heading">
+    <div class="loader-card">
+      <div class="loader-title">
+        <div>
+          <h1 id="loader-heading">Load required 3DO files</h1>
+          <p>The emulator will not start until a BIOS and a game image are loaded into their own slots.</p>
+        </div>
+        <button id="help-button" type="button">Help</button>
+      </div>
+
+      <div class="load-note">Use the two large boxes below. Drop <strong>bios.bin</strong> into the BIOS box and drop a <strong>.iso</strong> or <strong>.cue + .bin</strong> image into the game box, or press the matching Choose button.</div>
+
+      <div class="drop-grid" aria-label="Required emulator files">
+        <section id="bios-drop" class="drop-slot" aria-label="BIOS drop target" tabindex="0">
+          <div class="drop-icon" aria-hidden="true">⬇</div>
+          <div class="drop-title">Drop BIOS here</div>
+          <div class="drop-hint">Required: <code>bios.bin</code> or another <code>.bin</code> 3DO BIOS file</div>
+          <input id="bios-input" type="file" accept=".bin,application/octet-stream">
+          <button id="bios-choose" class="choose-button" type="button">Choose BIOS file…</button>
+          <div id="bios-name" class="drop-name">No BIOS selected.</div>
+        </section>
+
+        <section id="iso-drop" class="drop-slot" aria-label="ISO drop target" tabindex="0">
+          <div class="drop-icon" aria-hidden="true">⬇</div>
+          <div class="drop-title">Drop game image here</div>
+          <div class="drop-hint">Required: <code>.iso</code>, or select/drop <code>.cue</code> together with its referenced <code>.bin</code></div>
+          <input id="iso-input" type="file" multiple accept=".iso,.cue,.bin,application/x-iso9660-image,application/octet-stream">
+          <button id="iso-choose" class="choose-button" type="button">Choose game file(s)…</button>
+          <div id="iso-name" class="drop-name">No game image selected.</div>
+        </section>
+      </div>
+
+      <div class="file-state" id="file-state">Waiting for BIOS and game image.</div>
+      <label class="video-row">
+        Video standard
+        <select id="video-standard">
+          <option value="auto" selected>Auto from filename hints</option>
+          <option value="ntsc">NTSC 60 Hz / 320×240</option>
+          <option value="pal">PAL1 50 Hz / 320×288</option>
+        </select>
+        <span>Use PAL1 for software that expects <code>DI_TYPE_PAL1</code>.</span>
+      </label>
+      <div class="button-row start-row">
+        <span>Start becomes available only after both files are loaded.</span>
+        <button id="start-button" type="button" disabled>Start emulator</button>
+      </div>
+    </div>
+  </div>
+
+  <dialog id="help-dialog">
+    <h2>Loading files</h2>
+    <ol>
+      <li>Put the 3DO BIOS file into the left box. The expected test filename is <code>bios.bin</code>.</li>
+      <li>Put the game disc image into the right box. ISO files can be selected alone; BIN/CUE games must be selected or dropped as a pair.</li>
+      <li>Choose PAL1 if the BIOS/game uses the 320×288 PAL mode; Auto only uses filename hints in the browser.</li>
+      <li>When both boxes show a filename, press <strong>Start emulator</strong>.</li>
+    </ol>
+    <p>Dropping BIOS and game files on one place is intentionally rejected; BIN/CUE pairs belong together in the game slot.</p>
+    <div class="button-row"><button id="close-help" type="button">Close</button></div>
+  </dialog>
+
+  <div id="audio-prompt" hidden>Click or press a key to enable audio.</div>
+  <div id="top-ui">
+    <div class="button-row">
+      <button id="fullscreen-button" type="button">Fullscreen</button>
+      <button id="pause-button" type="button">Pause/Start</button>
+      <button id="reset-button" type="button" disabled>Soft reset</button>
+      <button id="autocrop-button" type="button">Auto-crop: On</button>
+      <button id="load-game-button" type="button" disabled>Load new game</button>
+    </div>
+    <details id="controls">
+      <summary>Controls</summary>
+      <div class="controls-body">
+        <p>Default keyboard: arrows/WASD move, Z or Enter = A, X or Space = X, C/V = B/C, Q/E = L/R, P = Pause/Start.</p>
+        <div class="button-row" style="justify-content:flex-start"><button id="reset-bindings" type="button">Reset bindings</button></div>
+        <div id="capture-box" hidden><div id="capture-status">Press a key.</div><button id="cancel-capture" class="small-button" type="button">Cancel</button></div>
+        <table id="bindings-table"><thead><tr><th>Action</th><th>Keyboard</th><th>Gamepad</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </details>
+  </div>
+  <div id="status">Loading wasm…</div>
+  <script src="3doh.js"></script>
+</body>
+</html>

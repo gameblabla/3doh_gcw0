@@ -52,6 +52,7 @@ struct QDatum {
 };
 
 static struct QDatum quarz;
+static int qrz_video_standard_pal = 0;
 
 uint32_t _qrz_SaveSize(void)
 {
@@ -77,14 +78,47 @@ void _qrz_Load(void *buff)
 #define VDL_HS quarz.VDL_HS
 #define VDL_FS quarz.VDL_FS
 
+static void _qrz_ApplyVideoStandard(void)
+{
+	if (qrz_video_standard_pal) {
+		/* PAL 3DO: 625-line family, 50 fields/second.  The emulated VDL
+		 * scheduler tracks half-frames, so 626 total half-lines gives 313
+		 * VDL lines per 50 Hz field. */
+		VDL_FS = 626;
+		VDL_CLOCK = VDL_FS * 25;
+	} else {
+		/* NTSC 3DO: 525-line family, 60 fields/second.  Keep the historical
+		 * FreeDO value of 526 total half-lines, i.e. 263 VDL lines per field. */
+		VDL_FS = 526;
+		VDL_CLOCK = VDL_FS * 30;
+	}
+	VDL_HS = VDL_FS / 2;
+	if (qrz_vdlline >= VDL_FS)
+		qrz_vdlline %= VDL_FS;
+}
+
+void  _qrz_SetVideoStandard(int pal)
+{
+	qrz_video_standard_pal = pal ? 1 : 0;
+	_qrz_ApplyVideoStandard();
+}
+
+int   _qrz_GetVideoStandard(void)
+{
+	return qrz_video_standard_pal ? 1 : 0;
+}
+
+int   _qrz_GetFieldRate(void)
+{
+	return qrz_video_standard_pal ? 50 : 60;
+}
+
 void  _qrz_Init(void)
 {
 	qrz_AccVDL = qrz_AccDSP = 0;
 	qrz_AccARM = 0;
 
-	VDL_FS = 526;
-	VDL_CLOCK = VDL_FS * 30;
-	VDL_HS = VDL_FS / 2;
+	_qrz_ApplyVideoStandard();
 
 	qrz_TCount = 0;
 	qrz_vdlline = 0;
@@ -199,6 +233,22 @@ void  _qrz_PushARMCycles(uint32_t clks)
 	if (fixmode & FIX_BIT_TIMING_7) {
 		sp = -3000000;
 		timers = 21000000;
+	}
+
+	/* Hardware CD/XBUS DMA is not an instantaneous zero-time memory copy.
+	 * When the CLIO-side DMA/timer observation window is active, slow the
+	 * CLIO timer source and give the ARM extra bus time.  This is global
+	 * hardware behavior keyed from DMA activity, not a per-title Timing Hack 6
+	 * switch. */
+	if (_clio_GetXbusDmaTimerWindow() || _clio_GetXbusDmaTimerAccum()) {
+		/* Match the hardware-shaped part of Opera's Alone-in-the-Dark timing
+		 * workaround without keying off the title: XBUS DMA pressure slows the
+		 * CLIO timer source, while the large ARM bus-time correction only applies
+		 * in the same low-CEL-pressure window where the original timing code used
+		 * it.  Applying the full correction for every DMA pulse was too broad. */
+		timers = 1000000;
+		if (sf <= 80000)
+			sp = -23000000;
 	}
 	if ((sf > 0x186A0 && !(fixmode & FIX_BIT_TIMING_2)) || ((fixmode & FIX_BIT_TIMING_2) && sf > 2500000))
 		sp = -(12200000 - ARM_CLOCK);

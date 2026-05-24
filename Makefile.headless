@@ -1,0 +1,38 @@
+# Deterministic no-SDL runner for emulator-core investigations.
+CC ?= cc
+TARGET ?= 3doh-headless
+BUILD_DIR ?= build/headless
+BPP_TYPE ?= 32
+USE_HLE_SWI ?= 0
+
+CFLAGS ?= -O2 -std=gnu99 -Wall -Wextra
+CFLAGS += -DDONTPACK -DTHREEDOH_HEADLESS -DBPP_TYPE=$(BPP_TYPE)
+ifeq ($(USE_HLE_SWI),1)
+CFLAGS += -DHLE_SWI
+endif
+CFLAGS += -Isrc -Isrc/freedo
+LDFLAGS += -lm
+
+CORE_SRCS = \
+	src/freedo/arm.c src/freedo/DiagPort.c src/freedo/quarz.c src/freedo/Clio.c \
+	src/freedo/frame.c src/freedo/Madam.c src/freedo/vdlp.c src/freedo/_3do_sys.c \
+	src/freedo/bitop.c src/freedo/DSP.c src/freedo/Iso.c src/freedo/SPORT.c \
+	src/freedo/XBUS.c src/freedo/freedo_fixedpoint_math.c \
+	src/cdrom.c src/cuefile.c src/config.c src/input_script.c src/core/threedoh_core.c
+
+SRCS = $(CORE_SRCS) src/platform/wasm/wasm_input.c src/platform/wasm/wasm_sound.c src/tools/headless_runner.c
+OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SRCS))
+
+all: $(TARGET)
+
+$(BUILD_DIR)/%.o: %.c
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(TARGET): $(OBJS)
+	$(CC) $(OBJS) -o $@ $(LDFLAGS)
+
+clean:
+	rm -rf $(BUILD_DIR) $(TARGET)
+
+.PHONY: all clean

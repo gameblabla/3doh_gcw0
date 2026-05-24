@@ -27,12 +27,42 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifndef BPP_TYPE
+#define BPP_TYPE 16
+#endif
+
+#ifndef THREEDOH_MAX_SCREEN_WIDTH
+#define THREEDOH_MAX_SCREEN_WIDTH 320
+#endif
+#ifndef THREEDOH_NTSC_SCREEN_HEIGHT
+#define THREEDOH_NTSC_SCREEN_HEIGHT 240
+#endif
+#ifndef THREEDOH_PAL1_SCREEN_HEIGHT
+#define THREEDOH_PAL1_SCREEN_HEIGHT 288
+#endif
+#ifndef THREEDOH_MAX_SCREEN_HEIGHT
+#define THREEDOH_MAX_SCREEN_HEIGHT THREEDOH_PAL1_SCREEN_HEIGHT
+#endif
+#ifndef THREEDOH_VDL_FIRST_VISIBLE_LINE
+#define THREEDOH_VDL_FIRST_VISIBLE_LINE 16
+#endif
+
 #ifndef DONTPACK
 #pragma pack(push,1)
 #endif
 
 struct VDLLine {
-	uint16_t line[320 * 4];
+	/* 16-bit-only targets keep the historic compact line buffer.
+	 * 32-bit renderers keep both VDL source buffers so the frontend can
+	 * apply the display generator path: custom CLUT RGB888 expansion,
+	 * bit-15 blue-LSB handling, and current/previous buffer interpolation.
+	 */
+	uint16_t line[THREEDOH_MAX_SCREEN_WIDTH * 4];
+#if BPP_TYPE == 32
+	uint16_t currentLine[THREEDOH_MAX_SCREEN_WIDTH * 4];
+	uint8_t xHasCurrentLine;
+#endif
+	uint8_t xHasBitmapLine;
 	uint8_t xCLUTB[32];
 	uint8_t xCLUTG[32];
 	uint8_t xCLUTR[32];
@@ -42,7 +72,7 @@ struct VDLLine {
 };
 
 struct VDLFrame {
-	struct VDLLine lines[240 * 4];
+	struct VDLLine lines[THREEDOH_MAX_SCREEN_HEIGHT * 4];
 	unsigned int srcw, srch;
 };
 

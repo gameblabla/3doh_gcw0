@@ -32,6 +32,9 @@ extern "C" {
 #endif
 
 void  _qrz_Init(void);
+void  _qrz_SetVideoStandard(int pal);
+int   _qrz_GetVideoStandard(void);
+int   _qrz_GetFieldRate(void);
 
 int  _qrz_VDCurrLine(void);
 int  _qrz_VDHalfFrame(void);

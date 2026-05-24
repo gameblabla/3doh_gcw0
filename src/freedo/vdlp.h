@@ -38,6 +38,8 @@ void _vdl_Init(uint8_t *vramstart);
 void _vdl_ProcessVDL( uint32_t addr);
 
 void _vdl_DoLineNew(uint32_t line, struct VDLFrame *frame);
+void _vdl_SetVisibleHeight(uint32_t height);
+uint32_t _vdl_GetVisibleHeight(void);
 
 uint32_t _vdl_SaveSize(void);
 void _vdl_Save(void *buff);

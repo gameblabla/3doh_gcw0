@@ -1,0 +1,14 @@
+Aggressive auto-crop update
+===========================
+
+Auto-crop now removes all detected solid/near-black image-edge borders.
+
+Changes:
+- Removed the previous 2-pixel crop guard band.
+- Removed the previous rule that ignored 1-3 pixel borders around the image.
+- Raised RGB near-black detection from <=6 to <=12 for 32-bit builds, so
+  converted or dithered black borders are also treated as crop candidates.
+- Kept the minimum visible-area safeguard and 6-frame stability hysteresis,
+  so tiny logos/fades do not cause rapid zooming.
+
+Applies to SDL1.2, SDL3, and wasm.

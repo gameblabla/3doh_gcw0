@@ -1,24 +1,19 @@
-/*
-    This file is part of 3d'oh, a multiplatform 3do emulator written by Gabriel Ernesto Cabral.
+/* Platform-neutral audio interface.  One backend implementation is linked at a time. */
+#ifndef THREEDOH_SOUND_H
+#define THREEDOH_SOUND_H
 
-    3d'oh is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 2 of the License, or
-    (at your option) any later version.
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-    3d'oh is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with 3d'oh.  If not, see <http://www.gnu.org/licenses/>.
-
- */
-
-
-
-int  soundInit();
+int  soundInit(void);
+void soundBeginFrame(void);
 void soundFillBuffer(unsigned int dspLoop);
-void soundRun();
-void soundClose();
+void soundRun(void);
+void soundClose(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

@@ -59,6 +59,31 @@ struct ARM_CoreState {
 	bool nFIQ;              //external interrupt
 	bool SecondROM;         //ROM selector
 	bool MAS_Access_Exept;  //memory exceptions
+	bool StrictBusFaults;   //strict hardware-like bus/data aborts
+	bool BusFaulted;        //latched by the last memory access
+	uint32_t LastFaultAddr;
+	uint32_t LastFaultPC;
+	uint32_t LastFaultType;
+
+	uint32_t CP15_ID;
+	uint32_t CP15_Control;
+	uint32_t CP15_TranslationBase;
+	uint32_t CP15_DomainAccessControl;
+	uint32_t CP15_FaultStatus;
+	uint32_t CP15_FaultAddress;
+	uint32_t CP15_LastOp;
+	uint32_t CP15_CoprocessorOps;
+	uint32_t CP15_CacheFlushes;
+	uint32_t CP15_WriteBufferFlushes;
+
+	uint32_t CacheTag[256];
+	uint8_t CacheData[256][16];
+	uint8_t CacheValid[256];
+
+	uint32_t WriteBufferAddr[8];
+	uint32_t WriteBufferData[8];
+	uint8_t WriteBufferMask[8];
+	uint8_t WriteBufferCount;
 };
 #ifndef DONTPACK
 #pragma pack(pop)
@@ -83,6 +108,36 @@ int _arm_Execute(void);
 void _arm_Reset(void);
 void _arm_Destroy(void);
 uint8_t *_arm_Init(void);
+
+void _arm_SetStrictBusFaults(bool enabled);
+bool _arm_GetStrictBusFaults(void);
+bool _arm_BusFaulted(void);
+uint32_t _arm_LastFaultAddress(void);
+uint32_t _arm_LastFaultPC(void);
+uint32_t _arm_LastFaultType(void);
+uint32_t _arm_CurrentPC(void);
+uint32_t _arm_CurrentCPSR(void);
+uint32_t _arm_FiqEntryCount(void);
+uint32_t _arm_UnalignedPrefetchCount(void);
+uint32_t _arm_UnalignedPrefetchLast(void);
+uint32_t _arm_UnalignedPrefetchFetch(void);
+uint32_t _arm_MirroredPrefetchCount(void);
+uint32_t _arm_MirroredPrefetchLast(void);
+uint32_t _arm_MirroredPrefetchFetch(void);
+void _arm_ClearFault(void);
+void _arm_DataAbort(uint32_t addr, uint32_t type);
+void _arm_FlushWriteBuffer(void);
+uint32_t _arm_CP15Control(void);
+uint32_t _arm_CP15Ops(void);
+uint32_t _arm_CP15CacheFlushes(void);
+uint32_t _arm_CP15WriteBufferFlushes(void);
+
+uint32_t _arm_HighRamReadCount(void);
+uint32_t _arm_HighRamWriteCount(void);
+uint32_t _arm_HighRamFirstRead(void);
+uint32_t _arm_HighRamFirstWrite(void);
+uint32_t _arm_HighRamLastRead(void);
+uint32_t _arm_HighRamLastWrite(void);
 
 //for mas
 void _mem_write8(unsigned int addr, uint8_t val);

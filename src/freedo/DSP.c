@@ -28,6 +28,7 @@
 #include <string.h>
 #include "DSP.h"
 #include "Clio.h"
+#include "arm.h"
 #include "retro_inline.h"
 #include "freedocore.h"
 
@@ -52,6 +53,9 @@
 #define SUBVFLAG(A, B, rd) ( ((((A)&~(B)&~rd) & TOPBIT) || ((~(A)&(B)&rd) & TOPBIT)) ? 1 : 0 )
 
 #define WAVELET (11025)
+#define DSP_STRICT_MAX_INSTRUCTIONS 4096u
+#define ARM_FAULT_DSP_RUNAWAY 8u
+#define ARM_FAULT_DSP_RESOURCE 14u
 
 uint16_t RegBase(unsigned int reg);
 static INLINE uint16_t ireadh(unsigned int addr);
@@ -173,8 +177,8 @@ struct REGSTAG {
 	uint16_t AudioOutStatus;        //audlock,lftfull,rgtfull -- 0x0eb//0x3eb
 	uint16_t Sema4Status;           //0x0ec//0x3ec
 	uint16_t Sema4Data;             //0x0ed//0x3ed
-	int16_t DSPPCNT;                //0x0ef
-	int16_t DSPPRLD;                //0x3ef
+	int32_t DSPPCNT;                //0x0ef
+	int32_t DSPPRLD;                //0x3ef
 	int16_t AUDCNT;
 	uint16_t INT;                   //0x3ee
 };
@@ -219,6 +223,110 @@ struct DSPDatum {
 #endif
 
 static struct DSPDatum dsp;
+static bool dsp_strict_resource_faults = true;
+static uint32_t dsp_resource_fault_count;
+static uint32_t dsp_resource_mirror_fault_count;
+static uint32_t dsp_last_resource_fault_address;
+static uint32_t dsp_last_resource_fault_detail;
+static uint32_t dsp_run_start_count;
+static uint32_t dsp_run_stop_count;
+static uint32_t dsp_reset_count;
+static uint32_t dsp_int_write_count;
+static uint32_t dsp_last_int_value;
+static uint32_t dsp_arm_sema_write_count;
+static uint32_t dsp_arm_sema_read_count;
+static uint32_t dsp_dsp_sema_write_count;
+static uint32_t dsp_dsp_sema_ack_count;
+static uint32_t dsp_cpu_supply_write_count;
+static uint32_t dsp_cpu_supply_read_count;
+static uint32_t dsp_cpu_supply_random_read_count;
+static uint32_t dsp_last_cpu_supply_channel;
+static uint32_t dsp_audio_tick_count;
+static uint32_t dsp_counter_reload_count;
+static uint32_t dsp_program_frame_count;
+static uint32_t dsp_sleep_count;
+static uint32_t dsp_deferred_tick_count;
+static uint32_t dsp_multi_reload_count;
+static uint32_t dsp_audlock_write_count;
+static uint32_t dsp_audlock_reset_count;
+static uint32_t dsp_last_audio_status_value;
+
+void _dsp_SetStrictResourceFaults(bool enabled)
+{
+	dsp_strict_resource_faults = enabled ? true : false;
+}
+
+bool _dsp_GetStrictResourceFaults(void)
+{
+	return dsp_strict_resource_faults;
+}
+
+bool _dsp_EffectiveStrictResourceFaults(void)
+{
+	return _arm_GetStrictBusFaults() && dsp_strict_resource_faults;
+}
+
+void _dsp_StrictResourceAbort(uint32_t bus_addr, uint32_t detail)
+{
+	dsp_resource_fault_count++;
+	if (detail >= 0x3000 && detail < 0x4000)
+		dsp_resource_mirror_fault_count++;
+	dsp_last_resource_fault_address = bus_addr;
+	dsp_last_resource_fault_detail = detail;
+	_arm_DataAbort(bus_addr, ARM_FAULT_DSP_RESOURCE);
+}
+
+uint32_t _dsp_GetResourceFaultCount(void)
+{
+	return dsp_resource_fault_count;
+}
+
+uint32_t _dsp_GetResourceMirrorFaultCount(void)
+{
+	return dsp_resource_mirror_fault_count;
+}
+
+uint32_t _dsp_GetLastResourceFaultAddress(void)
+{
+	return dsp_last_resource_fault_address;
+}
+
+uint32_t _dsp_GetLastResourceFaultDetail(void)
+{
+	return dsp_last_resource_fault_detail;
+}
+
+uint32_t _dsp_GetRunStartCount(void) { return dsp_run_start_count; }
+uint32_t _dsp_GetRunStopCount(void) { return dsp_run_stop_count; }
+uint32_t _dsp_GetResetCount(void) { return dsp_reset_count; }
+uint32_t _dsp_GetIntWriteCount(void) { return dsp_int_write_count; }
+uint32_t _dsp_GetLastIntValue(void) { return dsp_last_int_value; }
+uint32_t _dsp_GetArmSemaWriteCount(void) { return dsp_arm_sema_write_count; }
+uint32_t _dsp_GetArmSemaReadCount(void) { return dsp_arm_sema_read_count; }
+uint32_t _dsp_GetDspSemaWriteCount(void) { return dsp_dsp_sema_write_count; }
+uint32_t _dsp_GetDspSemaAckCount(void) { return dsp_dsp_sema_ack_count; }
+uint32_t _dsp_GetCpuSupplyWriteCount(void) { return dsp_cpu_supply_write_count; }
+uint32_t _dsp_GetCpuSupplyReadCount(void) { return dsp_cpu_supply_read_count; }
+uint32_t _dsp_GetCpuSupplyRandomReadCount(void) { return dsp_cpu_supply_random_read_count; }
+uint32_t _dsp_GetLastCpuSupplyChannel(void) { return dsp_last_cpu_supply_channel; }
+uint32_t _dsp_GetCurrentPC(void) { return (uint32_t)(dsp.dregs.PC & 0xffff); }
+uint32_t _dsp_GetCounterValue(void) { return (uint32_t)(dsp.dregs.DSPPCNT & 0xffff); }
+uint32_t _dsp_GetReloadValue(void) { return (uint32_t)(dsp.dregs.DSPPRLD & 0xffff); }
+uint32_t _dsp_GetCurrentStatus(void)
+{
+	return (dsp.flags.Running ? 1u : 0u) |
+	       ((uint32_t)(dsp.dregs.DSPPCNT & 0xffff) << 8) |
+	       ((uint32_t)(dsp.dregs.DSPPRLD & 0xffff) << 24);
+}
+uint32_t _dsp_GetAudioTickCount(void) { return dsp_audio_tick_count; }
+uint32_t _dsp_GetCounterReloadCount(void) { return dsp_counter_reload_count; }
+uint32_t _dsp_GetProgramFrameCount(void) { return dsp_program_frame_count; }
+uint32_t _dsp_GetSleepCount(void) { return dsp_sleep_count; }
+uint32_t _dsp_GetDeferredTickCount(void) { return dsp_deferred_tick_count; }
+uint32_t _dsp_GetMultiReloadCount(void) { return dsp_multi_reload_count; }
+uint32_t _dsp_GetAudlockWriteCount(void) { return dsp_audlock_write_count; }
+uint32_t _dsp_GetAudlockResetCount(void) { return dsp_audlock_reset_count; }
+uint32_t _dsp_GetLastAudioStatusValue(void) { return dsp_last_audio_status_value; }
 
 unsigned int _dsp_SaveSize(void)
 {
@@ -255,6 +363,32 @@ int fastrand(void)
 
 void _dsp_Init(void)
 {
+	dsp_resource_fault_count = 0;
+	dsp_resource_mirror_fault_count = 0;
+	dsp_last_resource_fault_address = 0;
+	dsp_last_resource_fault_detail = 0;
+	dsp_run_start_count = 0;
+	dsp_run_stop_count = 0;
+	dsp_reset_count = 0;
+	dsp_int_write_count = 0;
+	dsp_last_int_value = 0;
+	dsp_arm_sema_write_count = 0;
+	dsp_arm_sema_read_count = 0;
+	dsp_dsp_sema_write_count = 0;
+	dsp_dsp_sema_ack_count = 0;
+	dsp_cpu_supply_write_count = 0;
+	dsp_cpu_supply_read_count = 0;
+	dsp_cpu_supply_random_read_count = 0;
+	dsp_last_cpu_supply_channel = 0;
+	dsp_audio_tick_count = 0;
+	dsp_counter_reload_count = 0;
+	dsp_program_frame_count = 0;
+	dsp_sleep_count = 0;
+	dsp_deferred_tick_count = 0;
+	dsp_multi_reload_count = 0;
+	dsp_audlock_write_count = 0;
+	dsp_audlock_reset_count = 0;
+	dsp_last_audio_status_value = 0;
 	int a, c;
 	union ITAG inst;
 	unsigned int i;
@@ -393,13 +527,19 @@ void _dsp_Init(void)
 		CPUSupply[i] = 0;
 }
 
-void _dsp_Reset(void)
+static void _dsp_ResetProgramState(void)
 {
-	dregs.DSPPCNT = dregs.DSPPRLD;
 	dregs.PC = 0;
 	RBASEx4 = 0;
 	REGi = 0;
 	flags.nOP_MASK = ~0;
+}
+
+void _dsp_Reset(void)
+{
+	dsp_reset_count++;
+	dregs.DSPPCNT = dregs.DSPPRLD ? dregs.DSPPRLD : 1;
+	_dsp_ResetProgramState();
 }
 
 union {
@@ -412,7 +552,7 @@ union {
 	unsigned int raw;
 } Flags;
 
-uint32_t _dsp_Loop(void)
+static void _dsp_ExecuteProgramFrame(void)
 {
 	unsigned int BOP;       //1st & 2nd operand
 	unsigned int Y;         //accumulator
@@ -420,9 +560,11 @@ uint32_t _dsp_Loop(void)
 	unsigned RBSR = 0;      /* return address */
 	bool fExact   = 0;
 	bool Work     = true;
+	unsigned int strict_steps = 0;
 
 	if (flags.Running & 1) {
-		_dsp_Reset();
+		_dsp_ResetProgramState();
+		dsp_program_frame_count++;
 		Flags.raw = 0;
 		BOP = 0;
 		Y = 0;
@@ -430,6 +572,16 @@ uint32_t _dsp_Loop(void)
 		union ITAG inst;
 
 		do {
+			if (_arm_GetStrictBusFaults() && ++strict_steps > DSP_STRICT_MAX_INSTRUCTIONS) {
+				_arm_DataAbort(0x03401800u + ((uint32_t)(dregs.PC & 0x3ff) << 1), ARM_FAULT_DSP_RUNAWAY);
+				flags.Running = false;
+				break;
+			}
+			if (_arm_GetStrictBusFaults() && dregs.PC >= 0x400) {
+				_arm_DataAbort(0x03401800u + ((uint32_t)dregs.PC << 1), 5);
+				flags.Running = false;
+				break;
+			}
 			inst.raw = NMem[dregs.PC++];
 
 
@@ -692,6 +844,7 @@ uint32_t _dsp_Loop(void)
 				case 6:                 // -not used2- ins
 					break;
 				case 7:                 //SLEEP
+					dsp_sleep_count++;
 					Work = false;
 					break;
 				case 8:  case 9:  case 10: case 11:
@@ -749,10 +902,44 @@ uint32_t _dsp_Loop(void)
 			_clio_GenerateFiq(0x800, 0);//AudioFIQ
 		}
 
-		dregs.DSPPCNT -= 567;
-		if (dregs.DSPPCNT <= 0)
-			dregs.DSPPCNT += dregs.DSPPRLD;
 	}
+}
+
+uint32_t _dsp_Loop(void)
+{
+	int reloads = 0;
+	int reload = dregs.DSPPRLD ? dregs.DSPPRLD : 1;
+
+	dsp_audio_tick_count++;
+
+	if (flags.Running & 1) {
+		dregs.DSPPCNT -= 567;
+
+		while (dregs.DSPPCNT <= 0) {
+			dregs.DSPPCNT += reload;
+			dsp_counter_reload_count++;
+			reloads++;
+			if (reloads > 64) {
+				/* Defensive guard for bad reload programming.  Hardware would
+				 * be saturated here; keep the host deterministic and expose it
+				 * through the multi-reload counter. */
+				dsp_multi_reload_count++;
+				dregs.DSPPCNT = reload;
+				break;
+			}
+			_dsp_ExecuteProgramFrame();
+			/* AUDLOCK is status/control, not a reason to reset DSP program
+			 * state every scheduler reload.  MAME resets around output-frame
+			 * advancement, not on the mere 0x3eb write; resetting here causes
+			 * PAL Alone in the Dark to enter millions of synthetic DSP resets. */
+			if (_arm_GetStrictBusFaults() && _arm_BusFaulted())
+				break;
+		}
+
+		if (reloads == 0)
+			dsp_deferred_tick_count++;
+	}
+
 	return ((IMem[0x3ff] << 16) | IMem[0x3fe]);
 }
 
@@ -760,6 +947,10 @@ void  _dsp_WriteMemory(uint16_t addr, uint16_t val) //CPU writes NMEM of DSP
 {
 	//mwriteh(addr,val);
 	//printf("#NWRITE 0x%3.3X<=0x%4.4X\n",addr,val);
+	if (_dsp_EffectiveStrictResourceFaults() && addr >= 0x400) {
+		_dsp_StrictResourceAbort(0x03401800u + ((uint32_t)addr << 1), addr);
+		return;
+	}
 	NMem[addr & 0x3ff] = val;
 }
 
@@ -824,10 +1015,16 @@ static INLINE uint16_t ireadh(unsigned int addr) //DSP IREAD (includes EI, I)
 	case 0xf8:        case 0xf9:      case 0xfa:      case 0xfb:
 	case 0xfc:
 		if (CPUSupply[addr - 0xf0]) {
+			dsp_cpu_supply_read_count++;
+			dsp_cpu_supply_random_read_count++;
+			dsp_last_cpu_supply_channel = addr & 0x0f;
 			CPUSupply[addr - 0xf0] = 0;
 			//printf("#DSP read from CPU!!! chan=0x%x\n",addr&0x0f);
-			//val=IMem[addr-0x80];
-			val = (fastrand() << 16) | fastrand();
+			/* CPU-supplied EI words are latched in the corresponding EI register.
+			 * Returning pseudo-random data here made DSP programs consume an
+			 * impossible stream and could mask real FIFO/status races.
+			 */
+			val = IMem[addr - 0x80];
 		}else
 			val = _clio_EIFIFO(addr & 0x0f);
 		return val;
@@ -836,6 +1033,8 @@ static INLINE uint16_t ireadh(unsigned int addr) //DSP IREAD (includes EI, I)
 	case 0x78:        case 0x79:      case 0x7a:      case 0x7b:
 	case 0x7c:
 		if (CPUSupply[addr - 0x70]) {
+			dsp_cpu_supply_read_count++;
+			dsp_last_cpu_supply_channel = addr & 0x0f;
 			CPUSupply[addr - 0x70] = 0;
 			//printf("#DSP read from CPU!!! chan=0x%x\n",addr&0x0f);
 			return IMem[addr];
@@ -878,22 +1077,28 @@ INLINE void iwriteh(unsigned int addr, uint16_t val) //DSP IWRITE (includes EO,I
 	addr &= 0x3ff;
 	switch (addr) {
 	case 0x3eb:
+		dsp_audlock_write_count++;
+		dsp_last_audio_status_value = val;
 		dregs.AudioOutStatus = val;
 		break;
 	case 0x3ec:
 		/* DSP write to Sema4ACK */
+		dsp_dsp_sema_ack_count++;
 		dregs.Sema4Status |= 0x1;
 		break;
 	case 0x3ed:
+		dsp_dsp_sema_write_count++;
 		dregs.Sema4Data = val;
 		dregs.Sema4Status = 0x4; // DSP write to Sema4Data
 		break;
 	case 0x3ee:
+		dsp_int_write_count++;
+		dsp_last_int_value = val;
 		dregs.INT = val;
 		flags.GenFIQ = true;
 		break;
 	case 0x3ef:
-		dregs.DSPPRLD = val;
+		dregs.DSPPRLD = val ? val : 1;
 		break;
 	case 0x3f0:
 	case 0x3f1:
@@ -923,6 +1128,13 @@ INLINE void iwriteh(unsigned int addr, uint16_t val) //DSP IWRITE (includes EO,I
 
 void  _dsp_SetRunning(bool val)
 {
+	if (val && !flags.Running) {
+		dsp_run_start_count++;
+		/* Starting GW arms execution for the next 44.1 kHz DSPP tick. */
+		dregs.DSPPCNT = 0;
+	} else if (!val && flags.Running) {
+		dsp_run_stop_count++;
+	}
 	flags.Running = val;
 }
 
@@ -933,6 +1145,8 @@ void  _dsp_WriteIMem(uint16_t addr, uint16_t val)//CPU writes to EI,I of DSP
 	case 0x74:      case 0x75:      case 0x76:      case 0x77:
 	case 0x78:      case 0x79:      case 0x7a:      case 0x7b:
 	case 0x7c:
+		dsp_cpu_supply_write_count++;
+		dsp_last_cpu_supply_channel = addr & 0x0f;
 		CPUSupply[addr - 0x70] = 1;
 		IMem[addr & 0x7f] = val;
 		break;
@@ -955,6 +1169,7 @@ void  _dsp_WriteIMem(uint16_t addr, uint16_t val)//CPU writes to EI,I of DSP
 
 void  _dsp_ARMwrite2sema4(unsigned int val)
 {
+	dsp_arm_sema_write_count++;
 	// How about Sema4ACK? Now don't think about it
 	dregs.Sema4Data = val & 0xffff; // ARM write to Sema4Data low 16 bits
 	dregs.Sema4Status = 0x8;        // ARM be last
@@ -986,6 +1201,7 @@ uint16_t  _dsp_ReadIMem(uint16_t addr) //CPU reads from EO,I of DSP
 
 unsigned int _dsp_ARMread2sema4(void)
 {
+	dsp_arm_sema_read_count++;
 	//printf("#Arm read both Sema4Status & Sema4Data\n");
 	return (dregs.Sema4Status << 16) | dregs.Sema4Data;
 }
@@ -1013,7 +1229,11 @@ void  OperandLoader(int Requests)
 	GWRITEBACK = 0;
 
 	do {
-		operand.raw = NMem[dregs.PC++];
+		if (_dsp_EffectiveStrictResourceFaults() && dregs.PC >= 0x400) {
+		_dsp_StrictResourceAbort(0x03401800u + ((uint32_t)dregs.PC << 1), dregs.PC);
+		return;
+	}
+	operand.raw = NMem[dregs.PC++];
 
 		switch (operand.nrof.TYPE) {
 		case 4:
@@ -1127,6 +1347,10 @@ int  OperandLoaderNWB(void)
 	union ITAG operand;
 	int Operand = 0;
 
+	if (_dsp_EffectiveStrictResourceFaults() && dregs.PC >= 0x400) {
+		_dsp_StrictResourceAbort(0x03401800u + ((uint32_t)dregs.PC << 1), dregs.PC);
+		return 0;
+	}
 	operand.raw = NMem[dregs.PC++];
 	if (operand.nrof.TYPE == 4) {
 		//non reg format ///IT'S an address!!!

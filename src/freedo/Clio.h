@@ -49,12 +49,54 @@ void  _clio_EOFIFO(uint16_t channel, uint16_t val);
 uint16_t  _clio_EIFIFO(uint16_t channel);
 
 void _clio_Init(int ResetReson);
+void _clio_SetVideoStandard(int pal);
+int  _clio_GetVideoStandard(void);
 
 void _clio_DoTimers(void);
 uint32_t _clio_Peek(uint32_t addr);
 int _clio_Poke(uint32_t addr, uint32_t val);
 void _clio_UpdateVCNT(int line, int halfframe);
 void _clio_GenerateFiq(uint32_t reason1, uint32_t reason2);
+
+uint32_t _clio_GetFiqGenerateCount(void);
+uint32_t _clio_GetFiqNeedCount(void);
+uint32_t _clio_GetLastFiqReason1(void);
+uint32_t _clio_GetLastFiqReason2(void);
+uint32_t _clio_GetIrq0Pending(void);
+uint32_t _clio_GetIrq0Mask(void);
+uint32_t _clio_GetIrq1Pending(void);
+uint32_t _clio_GetIrq1Mask(void);
+uint32_t _clio_GetEififoReadCount(void);
+uint32_t _clio_GetEififoEmptyReadCount(void);
+uint32_t _clio_GetEififoReloadCount(void);
+uint32_t _clio_GetEofifoWriteCount(void);
+uint32_t _clio_GetEofifoDisabledWriteCount(void);
+uint32_t _clio_GetEofifoFullCount(void);
+uint32_t _clio_GetLastFifoEvent(void);
+uint32_t _clio_GetLastEififoEmptyChannel(void);
+uint32_t _clio_GetLastEififoReloadChannel(void);
+uint32_t _clio_GetEififoEmptyChannelCount(uint32_t channel);
+uint32_t _clio_GetEififoReloadChannelCount(uint32_t channel);
+uint32_t _clio_GetFifoLevelReassertCount(void);
+uint32_t _clio_GetFifoLevelReassertMask(void);
+uint32_t _clio_GetDSPPControlWriteCount(void);
+uint32_t _clio_GetDSPPControlLastValue(void);
+uint32_t _clio_GetDSPPControlNonGWCount(void);
+uint32_t _clio_GetDSPPResetWriteCount(void);
+uint32_t _clio_GetDSPPResetLastValue(void);
+uint32_t _clio_GetFifoReloadDMABlockCount(void);
+uint32_t _clio_GetFifoLastReloadDMABlockChannel(void);
+uint32_t _clio_GetDSPPNMemReadCount(void);
+uint32_t _clio_GetDSPPNMemLastReadAddress(void);
+uint32_t _clio_GetXbusDmaPulseCount(void);
+uint32_t _clio_GetXbusDmaLastLen(void);
+uint32_t _clio_GetXbusDmaLastAddr(void);
+uint32_t _clio_GetXbusDmaTimerAccum(void);
+uint32_t _clio_GetXbusDmaTimerWindow(void);
+uint32_t _clio_GetXbusTimer120AdjustCount(void);
+uint32_t _clio_GetXbusTimer120LastIn(void);
+uint32_t _clio_GetXbusTimer120LastOut(void);
+void _clio_FieldTick(void);
 
 uint32_t _clio_GetTimerDelay(void);
 

@@ -19,6 +19,8 @@ struct VDLFrame *frame;
 #define flags SDL_SWSURFACE
 #elif defined(SDL_TRIPLEBUF)
 #define flags SDL_HWSURFACE | SDL_TRIPLEBUF
+#elif defined(SCALING)
+#define flags SDL_SWSURFACE | SDL_DOUBLEBUF | SDL_FULLSCREEN
 #else
 #define flags SDL_HWSURFACE
 #endif

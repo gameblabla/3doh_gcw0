@@ -4,109 +4,148 @@
 #include "freedocore.h"
 #include "frame.h"
 
+#define VDL_CLUTBYPASSEN 0x02000000U
+#define VDL_VINTEN       0x00000004U
+#define VDL_HINTEN       0x00000008U
+#define VDL_BLSB_BLUE    0x00000020U
+
+static uint8_t FIXED_CLUT[32];
+
+static inline uint8_t expand5(uint8_t value)
+{
+	return (uint8_t)((value << 3) | (value >> 2));
+}
+
+void _frame_Init(void)
+{
+	uint_fast32_t j;
+	for (j = 0; j < 32; j++)
+		FIXED_CLUT[j] = expand5((uint8_t)j);
+}
+
 #if BPP_TYPE == 32
-static uint8_t FIXED_CLUTR[32];
-static uint8_t FIXED_CLUTG[32];
-static uint8_t FIXED_CLUTB[32];
-
-#if defined(__EMSCRIPTEN__)
-#define ORDER_R 10
-#define ORDER_G 5
-#define ORDER_B 0
-#else
-#define ORDER_R 0
-#define ORDER_G 5
-#define ORDER_B 10
-#endif
-
-void _frame_Init(void)
+static inline void decodeVDLPixel32(const struct VDLLine *linePtr, uint16_t pixel,
+                                    uint8_t *r, uint8_t *g, uint8_t *b)
 {
-	uint_fast32_t j;
-	for (j = 0; j < 32; j++) {
-		FIXED_CLUTR[j] = (uint8_t)(((j & 0x1f) << 3) | ((j >> 2) & 7));
-		FIXED_CLUTG[j] = FIXED_CLUTR[j];
-		FIXED_CLUTB[j] = FIXED_CLUTR[j];
+	if ((pixel & 0x7fffU) == 0) {
+		uint32_t bg = linePtr->xBACKGROUND;
+		*r = (uint8_t)((bg >> 16) & 0xffU);
+		*g = (uint8_t)((bg >> 8) & 0xffU);
+		*b = (uint8_t)(bg & 0xffU);
+		return;
+	}
+
+	uint8_t ri = (uint8_t)((pixel >> 10) & 0x1fU);
+	uint8_t gi = (uint8_t)((pixel >> 5) & 0x1fU);
+	uint8_t bi = (uint8_t)(pixel & 0x1fU);
+	bool fixed = ((linePtr->xOUTCONTROLL & VDL_CLUTBYPASSEN) != 0) && ((pixel & 0x8000U) != 0);
+
+	if (fixed) {
+		*r = FIXED_CLUT[ri];
+		*g = FIXED_CLUT[gi];
+		*b = FIXED_CLUT[bi];
+	} else {
+		/* The 3DO VDLP expands 15-bit bitmap components through three
+		 * independent 32-entry CLUTs.  Each CLUT entry is 8-bit, so this
+		 * path must remain RGB888 all the way to the browser framebuffer.
+		 */
+		*r = linePtr->xCLUTR[ri];
+		*g = linePtr->xCLUTG[gi];
+		*b = linePtr->xCLUTB[bi];
+
+		/* Some 24-bit image/VDL paths use pixel bit 15 as the least
+		 * significant blue bit.  The previous code only treated bit 15 as a
+		 * fixed-CLUT selector, which made examples such as slide_show_24bit
+		 * and FMV-style content lose one blue bit or select the wrong path.
+		 */
+		if ((linePtr->xOUTCONTROLL & VDL_BLSB_BLUE) != 0)
+			*b = (uint8_t)((*b & 0xfeU) | ((pixel >> 15) & 1U));
 	}
 }
-#else
-static uint8_t FIXED_CLUTR[32];
 
-void _frame_Init(void)
+static inline uint8_t avg8(uint8_t a, uint8_t b)
 {
-	uint_fast32_t j;
-	for (j = 0; j < 32; j++) {
-		FIXED_CLUTR[j] = (uint8_t)(((j & 0x1f) << 3) | ((j >> 2) & 7));
-	}
+	return (uint8_t)(((uint16_t)a + (uint16_t)b + 1U) >> 1);
 }
-#endif
 
-void Get_Frame_Bitmap(struct VDLFrame* sourceFrame, void* destinationBitmap, uint_fast32_t copyWidth, uint_fast32_t copyHeight)
+static inline bool lineUsesVDLInterpolation(const struct VDLLine *linePtr)
+{
+	return linePtr->xHasCurrentLine && ((linePtr->xOUTCONTROLL & (VDL_HINTEN | VDL_VINTEN)) != 0);
+}
+
+void Get_Frame_Bitmap(struct VDLFrame* sourceFrame, void* destinationBitmap,
+                      uint_fast32_t copyWidth, uint_fast32_t copyHeight)
 {
 	uint_fast32_t i, pix;
-#if BPP_TYPE == 32
 	uint8_t *destPtr = (uint8_t*)destinationBitmap;
 
 	for (i = 0; i < copyHeight; i++) {
-		struct VDLLine* linePtr = (struct VDLLine*)&sourceFrame->lines[i];
-		int16_t *srcPtr = (int16_t*)linePtr;
-		bool allowFixedClut = (linePtr->xOUTCONTROLL & 0x2000000) > 0;
+		const struct VDLLine* linePtr = (const struct VDLLine*)&sourceFrame->lines[i];
+		const uint16_t *srcPtr = linePtr->line;
+		const uint16_t *curPtr = linePtr->currentLine;
+		bool blendVDL = lineUsesVDLInterpolation(linePtr);
+
 		for (pix = 0; pix < copyWidth; pix++) {
-			if (*srcPtr == 0) {
-				*destPtr++ = (uint8_t)(linePtr->xBACKGROUND >> ORDER_R & 0x1F);
-				*destPtr++ = (uint8_t)((linePtr->xBACKGROUND >> ORDER_G) & 0x1F);
-				*destPtr++ = (uint8_t)((linePtr->xBACKGROUND >> ORDER_B) & 0x1F);
-			} else if (allowFixedClut && (*srcPtr & 0x8000) > 0) {
-				*destPtr++ = FIXED_CLUTB[(*srcPtr >> ORDER_R) & 0x1F];
-				*destPtr++ = FIXED_CLUTG[((*srcPtr) >> ORDER_G) & 0x1F];
-				*destPtr++ = FIXED_CLUTR[(*srcPtr) >> ORDER_B & 0x1F];
-			} else {
-				*destPtr++ = (uint8_t)(linePtr->xCLUTB[(*srcPtr >> ORDER_R) & 0x1F]);
-				*destPtr++ = linePtr->xCLUTG[((*srcPtr) >> ORDER_G) & 0x1F];
-				*destPtr++ = linePtr->xCLUTR[(*srcPtr) >> ORDER_B & 0x1F];
+			uint8_t r, g, b;
+			decodeVDLPixel32(linePtr, srcPtr[pix], &r, &g, &b);
+
+			if (blendVDL && curPtr[pix] != srcPtr[pix]) {
+				uint8_t cr, cg, cb;
+				decodeVDLPixel32(linePtr, curPtr[pix], &cr, &cg, &cb);
+				r = avg8(r, cr);
+				g = avg8(g, cg);
+				b = avg8(b, cb);
 			}
 
-			destPtr++;
-			srcPtr++;
-			/*
-			   16-bits displays...
-			   destPtr--;
-			         srcPtr++;
-			 */
+			*destPtr++ = r;
+			*destPtr++ = g;
+			*destPtr++ = b;
+			*destPtr++ = 255;
 		}
 	}
-#else
-	int16_t *destPtr = (int16_t*)destinationBitmap;
-	for (i = 0; i < copyHeight; i++)
-	{
-		struct VDLLine* linePtr = (struct VDLLine*)&sourceFrame->lines[i];
-		int16_t *srcPtr = (int16_t*)linePtr;
-		bool allowFixedClut = (linePtr->xOUTCONTROLL & 0x2000000) > 0;
-		for (pix = 0; pix < copyWidth; pix++)
-		{
-			int16_t bPart = 0;
-			int16_t gPart = 0;
-			int16_t rPart = 0;
-			if (*srcPtr == 0)
-			{
-				bPart = (int16_t)(linePtr->xBACKGROUND & 0x1F);
-				gPart = (int16_t)((linePtr->xBACKGROUND >> 5) & 0x1F);
-				rPart = (int16_t)((linePtr->xBACKGROUND >> 10) & 0x1F);
-			}
-			else if (allowFixedClut && (*srcPtr & 0x8000) > 0)
-			{
-				bPart = (int16_t)FIXED_CLUTR[(*srcPtr) & 0x1F];
-				gPart = (int16_t)FIXED_CLUTR[((*srcPtr) >> 5) & 0x1F];
-				rPart = (int16_t)FIXED_CLUTR[(*srcPtr) >> 10 & 0x1F];
-			}
-			else
-			{
-				bPart = (int16_t)(linePtr->xCLUTB[(*srcPtr) & 0x1F]);
-				gPart = (int16_t)linePtr->xCLUTG[((*srcPtr) >> 5) & 0x1F];
-				rPart = (int16_t)linePtr->xCLUTR[(*srcPtr) >> 10 & 0x1F];
-			}
-			*destPtr++=(int16_t)(((rPart << 0x8)&0xF800) | (((gPart << 0x3))&0x7E0) | (bPart >>0x3));
-			srcPtr++;
-		}
-	}
-#endif
 }
+#else
+static inline uint16_t rgb888To565(uint8_t r, uint8_t g, uint8_t b)
+{
+	return (uint16_t)(((uint16_t)(r & 0xf8U) << 8) |
+	                  ((uint16_t)(g & 0xfcU) << 3) |
+	                  ((uint16_t)b >> 3));
+}
+
+static inline uint16_t decodeVDLPixel16(const struct VDLLine *linePtr, uint16_t pixel)
+{
+	uint8_t r, g, b;
+
+	if ((pixel & 0x7fffU) == 0) {
+		uint32_t bg = linePtr->xBACKGROUND;
+		return rgb888To565((uint8_t)((bg >> 16) & 0xffU),
+		                   (uint8_t)((bg >> 8) & 0xffU),
+		                   (uint8_t)(bg & 0xffU));
+	}
+
+	if (((linePtr->xOUTCONTROLL & VDL_CLUTBYPASSEN) != 0) && ((pixel & 0x8000U) != 0)) {
+		r = FIXED_CLUT[(pixel >> 10) & 0x1fU];
+		g = FIXED_CLUT[(pixel >> 5) & 0x1fU];
+		b = FIXED_CLUT[pixel & 0x1fU];
+	} else {
+		r = linePtr->xCLUTR[(pixel >> 10) & 0x1fU];
+		g = linePtr->xCLUTG[(pixel >> 5) & 0x1fU];
+		b = linePtr->xCLUTB[pixel & 0x1fU];
+	}
+
+	return rgb888To565(r, g, b);
+}
+
+void Get_Frame_Bitmap(struct VDLFrame* sourceFrame, void* destinationBitmap,
+                      uint_fast32_t copyWidth, uint_fast32_t copyHeight)
+{
+	uint_fast32_t i, pix;
+	uint16_t *destPtr = (uint16_t*)destinationBitmap;
+	for (i = 0; i < copyHeight; i++) {
+		const struct VDLLine* linePtr = (const struct VDLLine*)&sourceFrame->lines[i];
+		const uint16_t *srcPtr = linePtr->line;
+		for (pix = 0; pix < copyWidth; pix++)
+			*destPtr++ = decodeVDLPixel16(linePtr, srcPtr[pix]);
+	}
+}
+#endif

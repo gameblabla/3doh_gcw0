@@ -15,6 +15,7 @@ extern uint32_t _3do_SaveSize(void);
 extern void _3do_Save(void *buff);
 
 extern bool _3do_Load(void *buff);
+extern bool _3do_LoadSized(void *buff, uint32_t size);
 extern void _3do_OnSector(uint32_t sector);
 
 extern void _3do_Read2048(void *buff);

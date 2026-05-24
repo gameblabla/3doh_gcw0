@@ -131,7 +131,7 @@ static inline int mainloop(void)
 	#else
 	#ifndef SDL_TRIPLEBUF
 	/* Framerate control */
-	synchronize_us();
+	//synchronize_us();
 	#endif
 	#endif
 	
@@ -186,8 +186,12 @@ int main(int argc, char *argv[])
 	fp = fopen(biosFile, "rb");
 	if (!fp)
 	{
-		error = 2;
-		goto got_error;
+		fp = fopen("bios.bin", "rb");
+		if (!fp)
+		{
+			error = 2;
+			goto got_error;
+		}
 	}
 	else
 	{

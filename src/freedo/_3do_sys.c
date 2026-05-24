@@ -170,9 +170,12 @@ void _3do_Frame(struct VDLFrame *frame, bool __skipframe)
 {
 	int i   = 0;
 	int cnt = 0;
+	unsigned int frame_exec_calls = 0;
+	const unsigned int strict_frame_exec_limit = 8192u;
 
 	curr_frame = frame;
 	skipframe = __skipframe;
+	_clio_FieldTick();
 
 	do {
 		while (Get_madam_FSM() == FSM_INPROCESS) {
@@ -182,9 +185,20 @@ void _3do_Frame(struct VDLFrame *frame, bool __skipframe)
 
 		/* anything between 16 .. 250 is good */
 		cnt = cpu->Exec(64);
+		frame_exec_calls++;
+		if (_arm_GetStrictBusFaults() && _arm_BusFaulted())
+			break;
+		if (_arm_GetStrictBusFaults() && frame_exec_calls > strict_frame_exec_limit) {
+			/* A real field cannot consume an unlimited number of 64-cycle
+			 * slices.  Treat this as a strict CPU runaway so broken
+			 * software paths fail deterministically instead of freezing the
+			 * host process. */
+			_arm_DataAbort(0, 10);
+			break;
+		}
 		_3do_InternalFrame(cnt);
 		i += cnt;
-	} while (i < (ARM_CLOCK / 60));
+	} while (i < (ARM_CLOCK / _qrz_GetFieldRate()));
 }
 
 void _3do_Destroy()
@@ -235,12 +249,41 @@ void _3do_Save(void *buff)
 
 }
 
-bool _3do_Load(void *buff)
+static bool _3do_ValidateLoadIndexes(const int *indexes, uint32_t size)
+{
+	uint32_t expected[10];
+	int i;
+
+	if (!indexes || size < 16 * 4)
+		return false;
+	if ((uint32_t)indexes[0] != 0x97970101)
+		return false;
+
+	expected[0] = 0x97970101;
+	expected[1] = 16 * 4;
+	expected[2] = expected[1] + _arm_SaveSize();
+	expected[3] = expected[2] + _vdl_SaveSize();
+	expected[4] = expected[3] + _dsp_SaveSize();
+	expected[5] = expected[4] + _clio_SaveSize();
+	expected[6] = expected[5] + _qrz_SaveSize();
+	expected[7] = expected[6] + _sport_SaveSize();
+	expected[8] = expected[7] + _madam_SaveSize();
+	expected[9] = expected[8] + _xbus_SaveSize();
+
+	for (i = 1; i < 10; i++) {
+		if (indexes[i] < 0 || (uint32_t)indexes[i] != expected[i])
+			return false;
+	}
+
+	return size >= expected[9];
+}
+
+bool _3do_LoadSized(void *buff, uint32_t size)
 {
 	uint8_t *data = (uint8_t*)buff;
 	int *indexes = (int*)buff;
 
-	if ((uint32_t)indexes[0] != 0x97970101)
+	if (!_3do_ValidateLoadIndexes(indexes, size))
 		return false;
 
 	_arm_Load(&data[indexes[1]]);
@@ -253,6 +296,11 @@ bool _3do_Load(void *buff)
 	_xbus_Load(&data[indexes[8]]);
 
 	return true;
+}
+
+bool _3do_Load(void *buff)
+{
+	return _3do_LoadSized(buff, _3do_SaveSize());
 }
 
 

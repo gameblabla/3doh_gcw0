@@ -1,0 +1,11 @@
+Status timeout / auto-crop update
+=================================
+
+- SDL3 status messages now expire automatically after 1.5 seconds.
+- SDL1.2 status messages are routed through the window caption and restored to the emulator title after 1.5 seconds.
+- The wasm status overlay now clears itself after 1.5 seconds.
+- Added auto-crop for black borders in SDL1.2, SDL3, and wasm-clang.
+- Auto-crop is enabled by default.
+- SDL3 exposes it under System -> Auto-crop.
+- wasm exposes an Auto-crop button in the top controls.
+- The crop detector ignores tiny bright logos/fades and requires six stable frames before switching crop rectangles to avoid flicker.

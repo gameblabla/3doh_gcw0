@@ -1,0 +1,41 @@
+# SDL 1.2 native backend.  This path intentionally stays 16bpp by default for
+# GCWZERO/legacy SDL-style targets.
+CC ?= cc
+TARGET ?= 3doh-sdl12
+BUILD_DIR ?= build/sdl12
+BPP_TYPE ?= 16
+SDL12_CFLAGS ?= $(shell sdl-config --cflags 2>/dev/null)
+SDL12_LIBS ?= $(shell sdl-config --libs 2>/dev/null || echo -lSDL)
+
+CFLAGS ?= -O2 -std=gnu99 -Wall -Wextra
+USE_HLE_SWI ?= 0
+CFLAGS += -DDONTPACK -DTHREEDOH_PLATFORM_SDL12 -DBPP_TYPE=$(BPP_TYPE)
+ifeq ($(USE_HLE_SWI),1)
+CFLAGS += -DHLE_SWI
+endif
+CFLAGS += -Isrc -Isrc/freedo $(SDL12_CFLAGS)
+LDFLAGS += $(SDL12_LIBS) -lm
+
+CORE_SRCS = \
+	src/freedo/arm.c src/freedo/DiagPort.c src/freedo/quarz.c src/freedo/Clio.c \
+	src/freedo/frame.c src/freedo/Madam.c src/freedo/vdlp.c src/freedo/_3do_sys.c \
+	src/freedo/bitop.c src/freedo/DSP.c src/freedo/Iso.c src/freedo/SPORT.c \
+	src/freedo/XBUS.c src/freedo/freedo_fixedpoint_math.c \
+	src/cdrom.c src/cuefile.c src/config.c src/input_script.c src/core/threedoh_core.c
+
+SRCS = $(CORE_SRCS) src/platform/sdl12/threedoh_sdl12.c src/main_hosted.c
+OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SRCS))
+
+all: $(TARGET)
+
+$(BUILD_DIR)/%.o: %.c
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(TARGET): $(OBJS)
+	$(CC) $(OBJS) -o $@ $(LDFLAGS)
+
+clean:
+	rm -rf $(BUILD_DIR) $(TARGET)
+
+.PHONY: all clean

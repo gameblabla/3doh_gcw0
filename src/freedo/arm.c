@@ -116,10 +116,47 @@ static const uint16_t cond_flags_cross[] = {    //((cond_flags_cross[cond_feald]
 // Global variables;
 ///////////////////////////////////////////////////////////////
 #define RAMSIZE     3 * 1024 * 1024     //dram1+dram2+vram
+#define REAL_MAIN_RAM_BYTES (2u * 1024u * 1024u)
+static uint32_t arm_highram_read_count;
+static uint32_t arm_highram_write_count;
+static uint32_t arm_highram_last_read;
+static uint32_t arm_highram_last_write;
+static uint32_t arm_highram_first_read;
+static uint32_t arm_highram_first_write;
 #define ROMSIZE     1 * 1024 * 1024     //rom
 #define NVRAMSIZE   (65536 >> 1)        //nvram at 0x03140000...0x317FFFF
 #define REG_PC  RON_USER[15]
 #define UNDEFVAL 0xBAD12345
+
+enum {
+	ARM_FAULT_NONE = 0,
+	ARM_FAULT_UNMAPPED_READ = 1,
+	ARM_FAULT_UNMAPPED_WRITE = 2,
+	ARM_FAULT_DEVICE_UNALIGNED_READ = 3,
+	ARM_FAULT_DEVICE_UNALIGNED_WRITE = 4,
+	ARM_FAULT_DSP_BOUNDS = 5,
+	ARM_FAULT_UNALIGNED_BLOCK = 6,
+	ARM_FAULT_PREFETCH = 7,
+	ARM_FAULT_DSP_RUNAWAY = 8,
+	ARM_FAULT_MADAM_RUNAWAY = 9,
+	ARM_FAULT_CPU_RUNAWAY = 10,
+	ARM_FAULT_MMU_TRANSLATION = 11,
+	ARM_FAULT_MMU_PERMISSION = 12,
+	ARM_FAULT_CP15_UNDEFINED = 13
+};
+
+static uint32_t current_instr_pc;
+static uint32_t arm_fiq_entry_count;
+static uint32_t arm_unaligned_prefetch_count;
+static uint32_t arm_unaligned_prefetch_last;
+static uint32_t arm_unaligned_prefetch_fetch;
+static uint32_t arm_mirrored_prefetch_count;
+static uint32_t arm_mirrored_prefetch_last;
+static uint32_t arm_mirrored_prefetch_fetch;
+static bool strict_bus_configured;
+static INLINE void SETM(uint32_t a);
+static INLINE void SETI(bool a);
+
 
 struct ARM_CoreState arm;
 static int CYCLES;      //cycle counter
@@ -147,6 +184,21 @@ void mwritew(uint32_t addr, uint32_t val);
 #define CPSR			arm.CPSR
 #define gFIQ			arm.nFIQ
 #define gSecondROM		arm.SecondROM
+#define STRICT_BUS_FAULTS	arm.StrictBusFaults
+#define BUS_FAULTED		arm.BusFaulted
+#define LAST_FAULT_ADDR		arm.LastFaultAddr
+#define LAST_FAULT_PC		arm.LastFaultPC
+#define LAST_FAULT_TYPE		arm.LastFaultType
+#define CP15_ID			arm.CP15_ID
+#define CP15_CONTROL		arm.CP15_Control
+#define CP15_TTB		arm.CP15_TranslationBase
+#define CP15_DACR		arm.CP15_DomainAccessControl
+#define CP15_FSR		arm.CP15_FaultStatus
+#define CP15_FAR		arm.CP15_FaultAddress
+#define CP15_LAST_OP		arm.CP15_LastOp
+#define CP15_OPS		arm.CP15_CoprocessorOps
+#define CP15_CACHE_FLUSHES	arm.CP15_CacheFlushes
+#define CP15_WB_FLUSHES	arm.CP15_WriteBufferFlushes
 
 void* Getp_NVRAM(void)
 {
@@ -170,6 +222,7 @@ uint32_t _arm_SaveSize(void)
 
 void _arm_Save(void *buff)
 {
+	_arm_FlushWriteBuffer();
 	memcpy(buff, &arm, sizeof(struct ARM_CoreState));
 	memcpy(((uint8_t*)buff) + sizeof(struct ARM_CoreState), pRam, RAMSIZE);
 	memcpy(((uint8_t*)buff) + sizeof(struct ARM_CoreState) + RAMSIZE, pRom, ROMSIZE * 2);
@@ -190,6 +243,8 @@ void _arm_Load(void *buff)
 	pRom = tRom;
 	pRam = tRam;
 	pNVRam = tNVRam;
+	if (!CP15_ID)
+		CP15_ID = 0x41560610u;
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -454,6 +509,378 @@ void SelectROM(int n)
 	gSecondROM = (n > 0) ? true : false;
 }
 
+void _arm_SetStrictBusFaults(bool enabled)
+{
+	STRICT_BUS_FAULTS = enabled;
+	strict_bus_configured = true;
+}
+
+bool _arm_GetStrictBusFaults(void)
+{
+	return STRICT_BUS_FAULTS;
+}
+
+bool _arm_BusFaulted(void)
+{
+	return BUS_FAULTED;
+}
+
+uint32_t _arm_LastFaultAddress(void)
+{
+	return LAST_FAULT_ADDR;
+}
+
+uint32_t _arm_LastFaultPC(void)
+{
+	return LAST_FAULT_PC;
+}
+
+uint32_t _arm_LastFaultType(void)
+{
+	return LAST_FAULT_TYPE;
+}
+
+uint32_t _arm_CurrentPC(void)
+{
+	return REG_PC;
+}
+
+uint32_t _arm_CurrentCPSR(void)
+{
+	return CPSR;
+}
+
+uint32_t _arm_FiqEntryCount(void)
+{
+	return arm_fiq_entry_count;
+}
+
+uint32_t _arm_UnalignedPrefetchCount(void)
+{
+	return arm_unaligned_prefetch_count;
+}
+
+uint32_t _arm_UnalignedPrefetchLast(void)
+{
+	return arm_unaligned_prefetch_last;
+}
+
+uint32_t _arm_UnalignedPrefetchFetch(void)
+{
+	return arm_unaligned_prefetch_fetch;
+}
+
+uint32_t _arm_MirroredPrefetchCount(void)
+{
+	return arm_mirrored_prefetch_count;
+}
+
+uint32_t _arm_MirroredPrefetchLast(void)
+{
+	return arm_mirrored_prefetch_last;
+}
+
+uint32_t _arm_MirroredPrefetchFetch(void)
+{
+	return arm_mirrored_prefetch_fetch;
+}
+
+void _arm_ClearFault(void)
+{
+	BUS_FAULTED = false;
+	MAS_Access_Exept = false;
+	LAST_FAULT_ADDR = 0;
+	LAST_FAULT_PC = 0;
+	LAST_FAULT_TYPE = ARM_FAULT_NONE;
+}
+
+static void arm_enter_data_abort(uint32_t addr, uint32_t type)
+{
+	if (BUS_FAULTED)
+		return;
+
+	BUS_FAULTED = true;
+	MAS_Access_Exept = true;
+	LAST_FAULT_ADDR = addr;
+	LAST_FAULT_PC = current_instr_pc;
+	LAST_FAULT_TYPE = type;
+
+	SPSR[arm_mode_table[0x17]] = CPSR;
+	SETI(1);
+	SETM(0x17);
+	load(14, current_instr_pc + 8);
+	REG_PC = 0x00000010;
+}
+
+void _arm_DataAbort(uint32_t addr, uint32_t type)
+{
+	if (STRICT_BUS_FAULTS)
+		arm_enter_data_abort(addr, type);
+	else {
+		LAST_FAULT_ADDR = addr;
+		LAST_FAULT_PC = current_instr_pc;
+		LAST_FAULT_TYPE = type;
+	}
+}
+
+#define CP15_CTRL_MMU          (1u << 0)
+#define CP15_CTRL_IDC          (1u << 2)
+#define CP15_CTRL_WRITE_BUFFER (1u << 3)
+#define CP15_CACHE_LINE_SIZE   16u
+#define CP15_CACHE_LINES       256u
+
+static INLINE bool cp15_mmu_enabled(void) { return (CP15_CONTROL & CP15_CTRL_MMU) != 0; }
+static INLINE bool cp15_cache_enabled(void) { return (CP15_CONTROL & (CP15_CTRL_MMU | CP15_CTRL_IDC)) == (CP15_CTRL_MMU | CP15_CTRL_IDC); }
+static INLINE bool cp15_write_buffer_enabled(void) { return (CP15_CONTROL & (CP15_CTRL_MMU | CP15_CTRL_WRITE_BUFFER)) == (CP15_CTRL_MMU | CP15_CTRL_WRITE_BUFFER); }
+
+static void cp15_cache_flush(void)
+{
+	memset(arm.CacheValid, 0, sizeof(arm.CacheValid));
+	CP15_CACHE_FLUSHES++;
+}
+
+static bool cp15_ram_span(uint32_t addr, uint32_t len)
+{
+	return addr < RAMSIZE && len <= RAMSIZE && addr + len <= RAMSIZE;
+}
+
+static void arm_note_highram_read(uint32_t addr)
+{
+	if (addr >= REAL_MAIN_RAM_BYTES && addr < RAMSIZE) {
+		if (!arm_highram_read_count) arm_highram_first_read = addr;
+		arm_highram_read_count++;
+		arm_highram_last_read = addr;
+	}
+}
+
+static void arm_note_highram_write(uint32_t addr)
+{
+	if (addr >= REAL_MAIN_RAM_BYTES && addr < RAMSIZE) {
+		if (!arm_highram_write_count) arm_highram_first_write = addr;
+		arm_highram_write_count++;
+		arm_highram_last_write = addr;
+	}
+}
+
+uint32_t _arm_HighRamReadCount(void) { return arm_highram_read_count; }
+uint32_t _arm_HighRamWriteCount(void) { return arm_highram_write_count; }
+uint32_t _arm_HighRamFirstRead(void) { return arm_highram_first_read; }
+uint32_t _arm_HighRamFirstWrite(void) { return arm_highram_first_write; }
+uint32_t _arm_HighRamLastRead(void) { return arm_highram_last_read; }
+uint32_t _arm_HighRamLastWrite(void) { return arm_highram_last_write; }
+
+static void arm_raw_ram_write_masked(uint32_t addr, uint32_t data, uint8_t mask)
+{
+	addr &= ~3u;
+	if (!cp15_ram_span(addr, 4))
+		return;
+#ifdef MSB_FIRST
+	if (mask & 0x8) pRam[addr + 0] = (uint8_t)(data >> 24);
+	if (mask & 0x4) pRam[addr + 1] = (uint8_t)(data >> 16);
+	if (mask & 0x2) pRam[addr + 2] = (uint8_t)(data >> 8);
+	if (mask & 0x1) pRam[addr + 3] = (uint8_t)data;
+#else
+	if (mask & 0x1) pRam[addr + 0] = (uint8_t)data;
+	if (mask & 0x2) pRam[addr + 1] = (uint8_t)(data >> 8);
+	if (mask & 0x4) pRam[addr + 2] = (uint8_t)(data >> 16);
+	if (mask & 0x8) pRam[addr + 3] = (uint8_t)(data >> 24);
+#endif
+}
+
+void _arm_FlushWriteBuffer(void)
+{
+	uint8_t i;
+	for (i = 0; i < arm.WriteBufferCount; i++)
+		arm_raw_ram_write_masked(arm.WriteBufferAddr[i], arm.WriteBufferData[i], arm.WriteBufferMask[i]);
+	if (arm.WriteBufferCount)
+		CP15_WB_FLUSHES++;
+	arm.WriteBufferCount = 0;
+}
+
+static void cp15_write_buffer_drain_one(void)
+{
+	uint8_t i;
+	if (!arm.WriteBufferCount)
+		return;
+	arm_raw_ram_write_masked(arm.WriteBufferAddr[0], arm.WriteBufferData[0], arm.WriteBufferMask[0]);
+	for (i = 1; i < arm.WriteBufferCount; i++) {
+		arm.WriteBufferAddr[i - 1] = arm.WriteBufferAddr[i];
+		arm.WriteBufferData[i - 1] = arm.WriteBufferData[i];
+		arm.WriteBufferMask[i - 1] = arm.WriteBufferMask[i];
+	}
+	arm.WriteBufferCount--;
+}
+
+static void cp15_write_buffer_enqueue(uint32_t addr, uint32_t data, uint8_t mask)
+{
+	uint8_t i;
+	addr &= ~3u;
+	for (i = 0; i < arm.WriteBufferCount; i++) {
+		if ((arm.WriteBufferAddr[i] & ~3u) == addr) {
+			uint32_t old = arm.WriteBufferData[i];
+			if (mask & 0x1) old = (old & ~0x000000ffu) | (data & 0x000000ffu);
+			if (mask & 0x2) old = (old & ~0x0000ff00u) | (data & 0x0000ff00u);
+			if (mask & 0x4) old = (old & ~0x00ff0000u) | (data & 0x00ff0000u);
+			if (mask & 0x8) old = (old & ~0xff000000u) | (data & 0xff000000u);
+			arm.WriteBufferData[i] = old;
+			arm.WriteBufferMask[i] |= mask;
+			return;
+		}
+	}
+	if (arm.WriteBufferCount >= 8)
+		cp15_write_buffer_drain_one();
+	arm.WriteBufferAddr[arm.WriteBufferCount] = addr;
+	arm.WriteBufferData[arm.WriteBufferCount] = data;
+	arm.WriteBufferMask[arm.WriteBufferCount] = mask;
+	arm.WriteBufferCount++;
+}
+
+static bool cp15_write_buffer_forward(uint32_t addr, uint32_t *data)
+{
+	int i;
+	uint32_t out;
+	uint8_t have = 0;
+	if (!data)
+		return false;
+	addr &= ~3u;
+	out = _mem_read32(addr);
+	for (i = (int)arm.WriteBufferCount - 1; i >= 0; i--) {
+		if ((arm.WriteBufferAddr[i] & ~3u) == addr) {
+			uint32_t d = arm.WriteBufferData[i];
+			uint8_t m = arm.WriteBufferMask[i];
+			if (m & 0x1) { out = (out & ~0x000000ffu) | (d & 0x000000ffu); have = 1; }
+			if (m & 0x2) { out = (out & ~0x0000ff00u) | (d & 0x0000ff00u); have = 1; }
+			if (m & 0x4) { out = (out & ~0x00ff0000u) | (d & 0x00ff0000u); have = 1; }
+			if (m & 0x8) { out = (out & ~0xff000000u) | (d & 0xff000000u); have = 1; }
+		}
+	}
+	*data = out;
+	return have != 0;
+}
+
+static uint32_t cp15_cache_read32(uint32_t pa)
+{
+	uint32_t line_addr = pa & ~(CP15_CACHE_LINE_SIZE - 1u);
+	uint32_t index = (line_addr >> 4) & (CP15_CACHE_LINES - 1u);
+	uint32_t tag = line_addr >> 12;
+	uint32_t off = pa & (CP15_CACHE_LINE_SIZE - 1u);
+	uint32_t value;
+	if (!arm.CacheValid[index] || arm.CacheTag[index] != tag) {
+		if (!cp15_ram_span(line_addr, CP15_CACHE_LINE_SIZE))
+			return _mem_read32(pa & ~3u);
+		memcpy(arm.CacheData[index], pRam + line_addr, CP15_CACHE_LINE_SIZE);
+		arm.CacheTag[index] = tag;
+		arm.CacheValid[index] = 1;
+	}
+#ifdef MSB_FIRST
+	value = ((uint32_t)arm.CacheData[index][off + 0] << 24) |
+	        ((uint32_t)arm.CacheData[index][off + 1] << 16) |
+	        ((uint32_t)arm.CacheData[index][off + 2] << 8) |
+	        ((uint32_t)arm.CacheData[index][off + 3]);
+#else
+	value = ((uint32_t)arm.CacheData[index][off + 3] << 24) |
+	        ((uint32_t)arm.CacheData[index][off + 2] << 16) |
+	        ((uint32_t)arm.CacheData[index][off + 1] << 8) |
+	        ((uint32_t)arm.CacheData[index][off + 0]);
+#endif
+	return value;
+}
+
+static void cp15_cache_write32_if_hit(uint32_t pa, uint32_t value, uint8_t mask)
+{
+	uint32_t line_addr = pa & ~(CP15_CACHE_LINE_SIZE - 1u);
+	uint32_t index = (line_addr >> 4) & (CP15_CACHE_LINES - 1u);
+	uint32_t tag = line_addr >> 12;
+	uint32_t off = pa & (CP15_CACHE_LINE_SIZE - 1u);
+	if (!arm.CacheValid[index] || arm.CacheTag[index] != tag)
+		return;
+#ifdef MSB_FIRST
+	if (mask & 0x8) arm.CacheData[index][off + 0] = (uint8_t)(value >> 24);
+	if (mask & 0x4) arm.CacheData[index][off + 1] = (uint8_t)(value >> 16);
+	if (mask & 0x2) arm.CacheData[index][off + 2] = (uint8_t)(value >> 8);
+	if (mask & 0x1) arm.CacheData[index][off + 3] = (uint8_t)value;
+#else
+	if (mask & 0x1) arm.CacheData[index][off + 0] = (uint8_t)value;
+	if (mask & 0x2) arm.CacheData[index][off + 1] = (uint8_t)(value >> 8);
+	if (mask & 0x4) arm.CacheData[index][off + 2] = (uint8_t)(value >> 16);
+	if (mask & 0x8) arm.CacheData[index][off + 3] = (uint8_t)(value >> 24);
+#endif
+}
+
+static int cp15_domain_ok(uint32_t desc, int write)
+{
+	uint32_t domain = (desc >> 5) & 0xf;
+	uint32_t access = (CP15_DACR >> (domain * 2)) & 3;
+	uint32_t ap = (desc >> 10) & 3;
+	(void)write;
+	if (access == 0)
+		return 0;
+	if (access == 3)
+		return 1;
+	return ap != 0;
+}
+
+static int cp15_translate(uint32_t va, int write, int fetch, uint32_t *pa, int *cacheable, int *bufferable)
+{
+	uint32_t l1addr, l1, type;
+	(void)fetch;
+	if (pa) *pa = va;
+	if (cacheable) *cacheable = 0;
+	if (bufferable) *bufferable = 0;
+	if (!cp15_mmu_enabled())
+		return 1;
+	l1addr = (CP15_TTB & 0xffffc000u) + ((va >> 18) & 0x3ffcu);
+	if (!cp15_ram_span(l1addr, 4)) {
+		CP15_FAR = va; CP15_FSR = 0x5;
+		_arm_DataAbort(va, ARM_FAULT_MMU_TRANSLATION);
+		return 0;
+	}
+	l1 = _mem_read32(l1addr);
+	type = l1 & 3u;
+	if (type == 2) {
+		if (!cp15_domain_ok(l1, write)) {
+			CP15_FAR = va; CP15_FSR = 0xd;
+			_arm_DataAbort(va, ARM_FAULT_MMU_PERMISSION);
+			return 0;
+		}
+		if (pa) *pa = (l1 & 0xfff00000u) | (va & 0x000fffffu);
+		if (cacheable) *cacheable = (l1 & 0x8u) != 0;
+		if (bufferable) *bufferable = (l1 & 0x4u) != 0;
+		return 1;
+	} else if (type == 1) {
+		uint32_t l2base = l1 & 0xfffffc00u;
+		uint32_t l2addr = l2base + ((va >> 10) & 0x3fcu);
+		uint32_t l2, l2type;
+		if (!cp15_domain_ok(l1, write) || !cp15_ram_span(l2addr, 4)) {
+			CP15_FAR = va; CP15_FSR = 0x7;
+			_arm_DataAbort(va, ARM_FAULT_MMU_TRANSLATION);
+			return 0;
+		}
+		l2 = _mem_read32(l2addr);
+		l2type = l2 & 3u;
+		if (l2type == 1) {
+			if (pa) *pa = (l2 & 0xffff0000u) | (va & 0x0000ffffu);
+		} else if (l2type == 2) {
+			if (pa) *pa = (l2 & 0xfffff000u) | (va & 0x00000fffu);
+		} else {
+			CP15_FAR = va; CP15_FSR = 0x7;
+			_arm_DataAbort(va, ARM_FAULT_MMU_TRANSLATION);
+			return 0;
+		}
+		if (cacheable) *cacheable = (l2 & 0x8u) != 0;
+		if (bufferable) *bufferable = (l2 & 0x4u) != 0;
+		return 1;
+	}
+	CP15_FAR = va; CP15_FSR = 0x5;
+	_arm_DataAbort(va, ARM_FAULT_MMU_TRANSLATION);
+	return 0;
+}
+
+uint32_t _arm_CP15Control(void) { return CP15_CONTROL; }
+uint32_t _arm_CP15Ops(void) { return CP15_OPS; }
+uint32_t _arm_CP15CacheFlushes(void) { return CP15_CACHE_FLUSHES; }
+uint32_t _arm_CP15WriteBufferFlushes(void) { return CP15_WB_FLUSHES; }
+
 void _arm_SetCPSR(uint32_t a)
 {
 #if 0
@@ -541,6 +968,31 @@ uint8_t *_arm_Init(void)
 	cpu->Init();
 
 	MAS_Access_Exept = false;
+	BUS_FAULTED = false;
+	LAST_FAULT_ADDR = 0;
+	LAST_FAULT_PC = 0;
+	LAST_FAULT_TYPE = ARM_FAULT_NONE;
+	arm_fiq_entry_count = 0;
+	arm_unaligned_prefetch_count = 0;
+	arm_unaligned_prefetch_last = 0;
+	arm_unaligned_prefetch_fetch = 0;
+	arm_mirrored_prefetch_count = 0;
+	arm_mirrored_prefetch_last = 0;
+	arm_mirrored_prefetch_fetch = 0;
+	if (!strict_bus_configured)
+		STRICT_BUS_FAULTS = true;
+	CP15_ID = 0x41560610u;
+	CP15_CONTROL = 0;
+	CP15_TTB = 0;
+	CP15_DACR = 0;
+	CP15_FSR = 0;
+	CP15_FAR = 0;
+	CP15_LAST_OP = 0;
+	CP15_OPS = 0;
+	CP15_CACHE_FLUSHES = 0;
+	CP15_WB_FLUSHES = 0;
+	memset(arm.CacheValid, 0, sizeof(arm.CacheValid));
+	arm.WriteBufferCount = 0;
 
 	CYCLES = 0;
 	for (i = 0; i < 16; i++)
@@ -564,6 +1016,9 @@ uint8_t *_arm_Init(void)
 	memset( pRam, 0, RAMSIZE);
 	memset( pRom, 0, ROMSIZE * 2);
 	memset( pNVRam, 0, NVRAMSIZE);
+	arm_highram_read_count = arm_highram_write_count = 0;
+	arm_highram_last_read = arm_highram_last_write = 0;
+	arm_highram_first_read = arm_highram_first_write = 0;
 	gFIQ = false;
 
 	readNvRam(pNVRam);
@@ -610,6 +1065,26 @@ void _arm_Reset(void)
 		RON_CASH[i] = RON_FIQ[i] = 0;
 
 	MAS_Access_Exept = false;
+	BUS_FAULTED = false;
+	LAST_FAULT_ADDR = 0;
+	LAST_FAULT_PC = 0;
+	LAST_FAULT_TYPE = ARM_FAULT_NONE;
+	arm_fiq_entry_count = 0;
+	arm_unaligned_prefetch_count = 0;
+	arm_unaligned_prefetch_last = 0;
+	arm_unaligned_prefetch_fetch = 0;
+	arm_mirrored_prefetch_count = 0;
+	arm_mirrored_prefetch_last = 0;
+	arm_mirrored_prefetch_fetch = 0;
+	CP15_CONTROL = 0;
+	CP15_TTB = 0;
+	CP15_DACR = 0;
+	CP15_FSR = 0;
+	CP15_FAR = 0;
+	CP15_LAST_OP = 0;
+	CP15_OPS = 0;
+	cp15_cache_flush();
+	_arm_FlushWriteBuffer();
 
 	REG_PC = 0x03000000;
 	_arm_SetCPSR(0x13);     //set svc mode
@@ -652,7 +1127,10 @@ void ldm_accur(uint32_t opc, uint32_t base, uint32_t rn_ind)
 		break;
 	}
 
-	//base_comp&=~3;
+	if (STRICT_BUS_FAULTS && (base_comp & 3)) {
+		_arm_DataAbort(base_comp, ARM_FAULT_UNALIGNED_BLOCK);
+		return;
+	}
 
 	//if(opc&(1<<21))RON_USER[rn_ind]=base;
 
@@ -661,6 +1139,8 @@ void ldm_accur(uint32_t opc, uint32_t base, uint32_t rn_ind)
 		while (list) {
 			if (list & 1) {
 				tmp = mreadw(base_comp);
+				if (MAS_Access_Exept)
+					return;
 				/*if(MAS_Access_Exept)
 				   {
 				   if(opc&(1<<21))RON_USER[rn_ind]=base;
@@ -677,6 +1157,8 @@ void ldm_accur(uint32_t opc, uint32_t base, uint32_t rn_ind)
 		while (list) {
 			if (list & 1) {
 				tmp = mreadw(base_comp);
+				if (MAS_Access_Exept)
+					return;
 				if (tmp == 0xF1000 && i == 0x1 && RON_USER[2] != 0xF0000 && cnbfix == 0 && (fixmode & FIX_BIT_TIMING_1)) {
 					tmp += 0x1000;
 				}
@@ -735,15 +1217,18 @@ void stm_accur(uint32_t opc, uint32_t base, uint32_t rn_ind)
 		break;
 	}
 
-	//base_comp&=~3;
-
+	if (STRICT_BUS_FAULTS && (base_comp & 3)) {
+		_arm_DataAbort(base_comp, ARM_FAULT_UNALIGNED_BLOCK);
+		return;
+	}
 
 	if ((opc & (1 << 22))) {
 		if ((opc & (1 << 21)) && (opc & ((1 << rn_ind) - 1)) ) loadusr(rn_ind, base);
 		while (list) {
 			if (list & 1) {
 				mwritew(base_comp, rreadusr(i));
-				//if(MAS_Access_Exept)break;
+				if (MAS_Access_Exept)
+					return;
 				base_comp += 4;
 			}
 			i++;
@@ -756,6 +1241,8 @@ void stm_accur(uint32_t opc, uint32_t base, uint32_t rn_ind)
 			if (list & 1) {
 				int aac = RON_USER[i];
 				mwritew(base_comp, aac);
+				if (MAS_Access_Exept)
+					return;
 				if (base_comp & 0x1FFFFF) {
 					addrr = base_comp; vall = aac; inuse = 1;
 				}
@@ -767,7 +1254,11 @@ void stm_accur(uint32_t opc, uint32_t base, uint32_t rn_ind)
 		if (opc & (1 << 21)) RON_USER[rn_ind] = base;
 	}
 
-	if ((opc & 0x8000) /*&& !MAS_Access_Exept*/) mwritew(base_comp, RON_USER[15] + 8);
+	if ((opc & 0x8000) /*&& !MAS_Access_Exept*/) {
+		mwritew(base_comp, RON_USER[15] + 8);
+		if (MAS_Access_Exept)
+			return;
+	}
 
 	CYCLES -= (x - 2) * SCYCLE + NCYCLE + NCYCLE;
 }
@@ -1044,12 +1535,17 @@ void arm60_SWAP(uint32_t cmd)
 
 	if (cmd & (1 << 22)) {
 		tmp = mreadb(addr);
+		if (MAS_Access_Exept) return;
 		mwriteb(addr, RON_USER[cmd & 0xf]);
+		if (MAS_Access_Exept) return;
 		REG_PC -= 8;
 		RON_USER[(cmd >> 12) & 0xf] = tmp;
 	} else {
+		if (STRICT_BUS_FAULTS && (addr & 3)) { _arm_DataAbort(addr, ARM_FAULT_DEVICE_UNALIGNED_READ); return; }
 		tmp = mreadw(addr);
+		if (MAS_Access_Exept) return;
 		mwritew(addr, RON_USER[cmd & 0xf]);
+		if (MAS_Access_Exept) return;
 		REG_PC -= 8;
 		if (addr & 3)
 			tmp = (tmp >> ((addr & 3) << 3)) |
@@ -1195,8 +1691,10 @@ void arm60_SDT(unsigned long cmd)
 	if (L) { //load
 		if (B) {				//bytes
 			val = mreadb(tbas) & 0xff;
+			if (MAS_Access_Exept) return;
 		} else {				//words/halfwords
 			val = mreadw(tbas);
+			if (MAS_Access_Exept) return;
 			rora = tbas & 3;
 			if ((rora))
 				val = __rotr(val, rora * 8);
@@ -1230,19 +1728,83 @@ void arm60_SDT(unsigned long cmd)
 			mwriteb(tbas, val);
 		else					//words
 			mwritew(tbas, val);
+		if (MAS_Access_Exept) return;
 
 		if (W || !P)
 			load(Rn, base);
 	}
 }
 
-void arm60_COPRO(/*unsigned long cmd*/)
+static void arm60_undefined_instruction(void)
 {
 	SPSR[arm_mode_table[0x1b]] = CPSR;
 	SETI(1);
 	SETM(0x1b);
 	load(14, REG_PC);
 	REG_PC = 0x00000004;
+	CYCLES -= SCYCLE + NCYCLE;
+}
+
+void arm60_COPRO(unsigned long cmd)
+{
+	uint32_t cpnum = (cmd >> 8) & 0xf;
+	uint32_t crn = (cmd >> 16) & 0xf;
+	uint32_t rd = (cmd >> 12) & 0xf;
+	uint32_t l = (cmd >> 20) & 1;
+
+	if (cpnum != 15 || (cmd & 0x10) == 0 || crn > 7) {
+		if (STRICT_BUS_FAULTS) {
+			LAST_FAULT_ADDR = REG_PC - 4;
+			LAST_FAULT_PC = current_instr_pc;
+			LAST_FAULT_TYPE = ARM_FAULT_CP15_UNDEFINED;
+		}
+		arm60_undefined_instruction();
+		return;
+	}
+
+	CP15_LAST_OP = cmd;
+	CP15_OPS++;
+
+	if (l) {
+		uint32_t value = 0;
+		switch (crn) {
+		case 0: value = CP15_ID ? CP15_ID : 0x41560610u; break;
+		case 1: value = CP15_CONTROL; break;
+		case 2: value = CP15_TTB; break;
+		case 3: value = CP15_DACR; break;
+		case 5: value = CP15_FSR; break;
+		case 6: value = CP15_FAR; break;
+		case 7: value = 0; break;
+		default: value = 0; break;
+		}
+		if (rd == 15)
+			CPSR = (CPSR & 0x0fffffffu) | (value & 0xf0000000u);
+		else
+			RON_USER[rd] = value;
+	} else {
+		uint32_t value = RON_USER[rd];
+		switch (crn) {
+		case 1: {
+			uint32_t old = CP15_CONTROL;
+			CP15_CONTROL = value & 0x00003fffu;
+			if ((old & CP15_CTRL_IDC) && !(CP15_CONTROL & CP15_CTRL_IDC))
+				cp15_cache_flush();
+			if ((old & CP15_CTRL_WRITE_BUFFER) && !(CP15_CONTROL & CP15_CTRL_WRITE_BUFFER))
+				_arm_FlushWriteBuffer();
+			break;
+		}
+		case 2: CP15_TTB = value & 0xffffc000u; break;
+		case 3: CP15_DACR = value; break;
+		case 5: CP15_FSR = value; break;
+		case 6: CP15_FAR = value; break;
+		case 7:
+			cp15_cache_flush();
+			_arm_FlushWriteBuffer();
+			break;
+		default: break;
+		}
+	}
+
 	CYCLES -= SCYCLE + NCYCLE;
 }
 
@@ -1454,11 +2016,67 @@ void arm60_ALU(unsigned long cmd)
 	}
 }
 
+static bool arm_prefetch_window_mapped(uint32_t addr)
+{
+	if (addr < RAMSIZE)
+		return true;
+	if (addr >= 0x03000000u && addr < 0x03500000u)
+		return true;
+	return false;
+}
+
+static uint32_t arm_normalize_prefetch_address(uint32_t addr)
+{
+	uint32_t mirrored;
+	if (arm_prefetch_window_mapped(addr))
+		return addr;
+
+	/* Several ARM60/Portfolio paths carry old R15/status residue into the
+	 * branch target.  On the 3DO bus the low DRAM decode is mirrored rather
+	 * than producing a useful high-memory instruction stream.  Alone in the
+	 * Dark PAL reaches 0x10411882 after the Krisalis logo; the executable code
+	 * is present at the decoded DRAM mirror 0x00011880.  Mirror only the low
+	 * 2 MB DRAM decode and only for instruction prefetches, so normal CLIO,
+	 * MADAM, ROM and SPORT device accesses remain strict. */
+	mirrored = addr & (REAL_MAIN_RAM_BYTES - 1u);
+	if (mirrored < REAL_MAIN_RAM_BYTES) {
+		arm_mirrored_prefetch_count++;
+		arm_mirrored_prefetch_last = addr;
+		arm_mirrored_prefetch_fetch = mirrored;
+		return mirrored;
+	}
+	return addr;
+}
+
 int _arm_Execute(void)
 {
 	uint32_t cmd;
+	uint32_t fetch_pc;
 
-	cmd = mreadw(REG_PC);
+	BUS_FAULTED = false;
+	MAS_Access_Exept = false;
+	fetch_pc = REG_PC;
+	if (fetch_pc & 3u) {
+		/* ARM instruction fetches are word-granular.  Some 3DO titles briefly
+		 * return through R15 values that still contain status/low-bit residue;
+		 * treating that residue itself as a strict prefetch abort is less
+		 * hardware-like than letting the aligned bus access decide whether the
+		 * target is valid.  Keep the event visible for diagnostics, normalize
+		 * the PC to the word boundary, and still allow mreadw()/MMU/device
+		 * checks below to raise real unmapped or permission faults. */
+		arm_unaligned_prefetch_count++;
+		arm_unaligned_prefetch_last = fetch_pc;
+		fetch_pc &= ~3u;
+		arm_unaligned_prefetch_fetch = fetch_pc;
+		REG_PC = fetch_pc;
+	}
+	fetch_pc = arm_normalize_prefetch_address(fetch_pc);
+	if (fetch_pc != REG_PC)
+		REG_PC = fetch_pc;
+	current_instr_pc = fetch_pc;
+	cmd = mreadw(fetch_pc);
+	if (MAS_Access_Exept)
+		return SCYCLE + NCYCLE;
 
 #ifdef DEBUG_CORE
 	if (REG_PC < 0x00300000) {
@@ -1484,7 +2102,7 @@ int _arm_Execute(void)
 		} else if ((cmd & ARM_BRA_MASK) == ARM_BRA_SIGN) {	/* Branch */
 			arm60_BRANCH(cmd);
 		} else if ((cmd & ARM_COP_MASK) == ARM_COP_SIGN) {	/* Coprocessor */
-			arm60_COPRO(/*cmd*/);
+			arm60_COPRO(cmd);
 		} else if ((cmd & ARM_SWI_MASK) == ARM_SWI_SIGN) {	/* Software interrupt */
 			#ifdef HLE_SWI
 			decode_swi(cmd);
@@ -1501,8 +2119,12 @@ int _arm_Execute(void)
 		}
 	}
 
+	if (MAS_Access_Exept)
+		return -CYCLES;
+
 	if (!ISF && _clio_NeedFIQ() /*gFIQ*/) {
 		//Set_madam_FSM(FSM_SUSPENDED);
+		arm_fiq_entry_count++;
 		gFIQ = 0;
 
 		SPSR[arm_mode_table[0x11]] = CPSR;
@@ -1523,22 +2145,46 @@ void _mem_write8(uint32_t addr, uint8_t val)
 
 void _mem_write16(uint32_t addr, uint16_t val)
 {
-	*((uint16_t*)&pRam[addr]) = val;
+#ifdef MSB_FIRST
+	pRam[addr + 0] = (uint8_t)(val >> 8);
+	pRam[addr + 1] = (uint8_t)val;
+#else
+	pRam[addr + 0] = (uint8_t)val;
+	pRam[addr + 1] = (uint8_t)(val >> 8);
+#endif
 }
 
 void _mem_write32(uint32_t addr, uint32_t val)
 {
-	*((uint32_t*)&pRam[addr]) = val;
+#ifdef MSB_FIRST
+	pRam[addr + 0] = (uint8_t)(val >> 24);
+	pRam[addr + 1] = (uint8_t)(val >> 16);
+	pRam[addr + 2] = (uint8_t)(val >> 8);
+	pRam[addr + 3] = (uint8_t)val;
+#else
+	pRam[addr + 0] = (uint8_t)val;
+	pRam[addr + 1] = (uint8_t)(val >> 8);
+	pRam[addr + 2] = (uint8_t)(val >> 16);
+	pRam[addr + 3] = (uint8_t)(val >> 24);
+#endif
 }
 
 uint16_t _mem_read16(uint32_t addr)
 {
-	return *((uint16_t*)&pRam[addr]);
+#ifdef MSB_FIRST
+	return ((uint16_t)pRam[addr] << 8) | pRam[addr + 1];
+#else
+	return ((uint16_t)pRam[addr + 1] << 8) | pRam[addr];
+#endif
 }
 
 uint32_t _mem_read32(uint32_t addr)
 {
-	return *((uint32_t*)&pRam[addr]);
+#ifdef MSB_FIRST
+	return ((uint32_t)pRam[addr] << 24) | ((uint32_t)pRam[addr + 1] << 16) | ((uint32_t)pRam[addr + 2] << 8) | pRam[addr + 3];
+#else
+	return ((uint32_t)pRam[addr + 3] << 24) | ((uint32_t)pRam[addr + 2] << 16) | ((uint32_t)pRam[addr + 1] << 8) | pRam[addr];
+#endif
 }
 
 uint8_t _mem_read8(uint32_t addr)
@@ -1546,172 +2192,221 @@ uint8_t _mem_read8(uint32_t addr)
 	return pRam[addr];
 }
 
+static void mwrite_ram32(uint32_t pa, uint32_t val, int cacheable, int bufferable)
+{
+	pa &= ~3u;
+	if (cacheable && cp15_cache_enabled())
+		cp15_cache_write32_if_hit(pa, val, 0xf);
+	if (bufferable && cp15_write_buffer_enabled())
+		cp15_write_buffer_enqueue(pa, val, 0xf);
+	else
+		_mem_write32(pa, val);
+}
+
+static void mwrite_ram8(uint32_t pa, uint32_t val, int cacheable, int bufferable)
+{
+	uint32_t wa = pa & ~3u;
+	uint32_t lane = (pa ^ 3u) & 3u;
+	uint32_t word = (val & 0xffu) << (lane * 8u);
+	uint8_t mask = (uint8_t)(1u << lane);
+	if (cacheable && cp15_cache_enabled())
+		cp15_cache_write32_if_hit(wa, word, mask);
+	if (bufferable && cp15_write_buffer_enabled())
+		cp15_write_buffer_enqueue(wa, word, mask);
+	else
+		_mem_write8(pa ^ 3u, val & 0xffu);
+}
+
+static uint32_t mread_ram32(uint32_t pa, int cacheable)
+{
+	uint32_t forwarded;
+	pa &= ~3u;
+	if (cp15_write_buffer_forward(pa, &forwarded))
+		return forwarded;
+	if (cacheable && cp15_cache_enabled())
+		return cp15_cache_read32(pa);
+	return _mem_read32(pa);
+}
+
+static uint32_t mread_ram8(uint32_t pa, int cacheable)
+{
+	uint32_t word = mread_ram32(pa & ~3u, cacheable);
+	uint32_t lane = (pa ^ 3u) & 3u;
+	return (word >> (lane * 8u)) & 0xffu;
+}
+
 void mwritew(uint32_t addr, uint32_t val)
 {
-	//to do -- wipe out all HW part
-	//to do -- add proper loging
 	uint32_t index;
+	const uint32_t raw_addr = addr;
+	uint32_t pa = addr;
+	int cacheable = 0;
+	int bufferable = 0;
 
-	addr &= ~3;
+	if (!cp15_translate(addr, 1, 0, &pa, &cacheable, &bufferable))
+		return;
+	pa &= ~3u;
 
-
-	if (addr < 0x00300000) { //dram1&dram2&vram
-		_mem_write32(addr, val);
+	if (pa < 0x00300000) {
+		arm_note_highram_write(pa);
+		mwrite_ram32(pa, val, cacheable, bufferable);
 		return;
 	}
 
-	if (!((index = (addr ^ 0x03300000)) & ~0x7FF)) { //madam
-		//  if((addr & ~0xFFFFF)==0x03300000) //madam
+	if (!((index = (pa ^ 0x03300000)) & ~0x7FF)) {
+		if (STRICT_BUS_FAULTS && (raw_addr & 3)) { _arm_DataAbort(raw_addr, ARM_FAULT_DEVICE_UNALIGNED_WRITE); return; }
+		_arm_FlushWriteBuffer();
 		_madam_Poke(index, val);
-
 		return;
 	}
 
-
-	if (!((index = (addr ^ 0x03400000)) & ~0xFFFF)) { //clio
-		//  if((addr & ~0xFFFFF)==0x03400000) //clio
-		if (_clio_Poke(index, val))
-			REG_PC += 4; // ???
+	if (!((index = (pa ^ 0x03400000)) & ~0xFFFF)) {
+		int poke;
+		if (STRICT_BUS_FAULTS && (raw_addr & 3)) { _arm_DataAbort(raw_addr, ARM_FAULT_DEVICE_UNALIGNED_WRITE); return; }
+		_arm_FlushWriteBuffer();
+		poke = _clio_Poke(index, val);
+		if (poke < 0) { _arm_DataAbort(raw_addr, ARM_FAULT_DSP_BOUNDS); return; }
+		if (poke)
+			REG_PC += 4;
 		return;
 	}
 
-	if (!((index = (addr ^ 0x03200000)) & ~0xFFFFF)) { //SPORT
+	if (!((index = (pa ^ 0x03200000)) & ~0xFFFFF)) {
+		if (STRICT_BUS_FAULTS && (raw_addr & 3)) { _arm_DataAbort(raw_addr, ARM_FAULT_DEVICE_UNALIGNED_WRITE); return; }
+		_arm_FlushWriteBuffer();
 		_sport_WriteAccess(index, val);
 		return;
 	}
 
-
-	if (!((index = (addr ^ 0x03100000)) & ~0xFFFFF)) { // NVRAM & DiagPort
-		if (index & 0x80000) { //if (addr>=0x03180000)
+	if (!((index = (pa ^ 0x03100000)) & ~0xFFFFF)) {
+		if (STRICT_BUS_FAULTS && (raw_addr & 3)) { _arm_DataAbort(raw_addr, ARM_FAULT_DEVICE_UNALIGNED_WRITE); return; }
+		_arm_FlushWriteBuffer();
+		if (index & 0x80000) {
 			_diag_Send(val);
 			return;
-		} else if (index & 0x40000) { //else if ((addr>=0x03140000) && (addr<0x03180000))
-			//  sprintf(str,":NVRAM Write [0x%X] = 0x%8.8X\n",addr,val);
-			//  CDebug::DPrint(str);
+		} else if (index & 0x40000) {
 			pNVRam[(index >> 2) & 32767] = (uint8_t)val;
-			//CConfig::SetNVRAMData(pNVRam);
-			/* Does nothing right now */
 			writeNvRam();
-			//io_interface(EXT_WRITE_NVRAM, pNVRam);//_3do_SaveNVRAM(pNVRam);
+			return;
 		}
-		return;
 	}
 
-	/*
-	   if ((addr>=0x03000000) && (addr<0x03100000)) //rom
-	   {
-	   return;
-	   }*/
-	//io_interface(EXT_DEBUG_PRINT,(void*)str.print("0x%8.8X:  WriteWord???  0x%8.8X=0x%8.8X\n",REG_PC,addr,val).CStr());
-
-
+	_arm_DataAbort(raw_addr, ARM_FAULT_UNMAPPED_WRITE);
 }
 
 uint32_t mreadw(uint32_t addr)
 {
-	//to do -- wipe out all HW
-	//to do -- add abort (may be in HW)
-	//to do -- proper loging
 	uint32_t index;
+	const uint32_t raw_addr = addr;
+	uint32_t pa = addr;
+	int cacheable = 0;
+	int bufferable = 0;
+	(void)bufferable;
 
-	addr &= ~3;
+	if (!cp15_translate(addr, 0, 0, &pa, &cacheable, &bufferable))
+		return 0xBADACCE5;
+	pa &= ~3u;
 
-	if (addr < 0x00300000) //dram1&dram2&vram
-		return _mem_read32(addr);
+	if (pa < 0x00300000) {
+		arm_note_highram_read(pa);
+		return mread_ram32(pa, cacheable);
+	}
 
-	if (!((index = (addr ^ 0x03300000)) & ~0xFFFFF)) //madam
+	if (!((index = (pa ^ 0x03300000)) & ~0xFFFFF)) {
+		if (STRICT_BUS_FAULTS && (raw_addr & 3)) { _arm_DataAbort(raw_addr, ARM_FAULT_DEVICE_UNALIGNED_READ); return 0xBADACCE5; }
 		return _madam_Peek(index);
+	}
 
+	if (!((index = (pa ^ 0x03400000)) & ~0xFFFFF)) {
+		uint32_t out;
+		if (STRICT_BUS_FAULTS && (raw_addr & 3)) { _arm_DataAbort(raw_addr, ARM_FAULT_DEVICE_UNALIGNED_READ); return 0xBADACCE5; }
+		out = _clio_Peek(index);
+		if (STRICT_BUS_FAULTS && _arm_BusFaulted()) return 0xBADACCE5;
+		return out;
+	}
 
-	if (!((index = (addr ^ 0x03400000)) & ~0xFFFFF)) //clio
-		return _clio_Peek(index);
-
-	if (!((index = (addr ^ 0x03200000)) & ~0xFFFFF)) { // read acces to SPORT
-		if (!((index = (addr ^ 0x03200000)) & ~0x1FFF))
+	if (!((index = (pa ^ 0x03200000)) & ~0xFFFFF)) {
+		if (STRICT_BUS_FAULTS && (raw_addr & 3)) { _arm_DataAbort(raw_addr, ARM_FAULT_DEVICE_UNALIGNED_READ); return 0xBADACCE5; }
+		if (!((index = (pa ^ 0x03200000)) & ~0x1FFF))
 			return _sport_SetSource(index);
-		//          io_interface(EXT_DEBUG_PRINT,(void*)str.print("0x%8.8X:  Unknow read access to SPORT  0x%8.8X=0x%8.8X\n",REG_PC,addr,0xBADACCE5).CStr());
-		//!!Exeption!!
 		return 0xBADACCE5;
 	}
 
-	if (!((index = (addr ^ 0x03000000)) & ~0xFFFFF)) { //rom
-		if (!gSecondROM) // 2nd rom
-			return *(uint32_t*)(pRom + index);
-		return *(uint32_t*)(pRom + index + 1024 * 1024);
+	if (!((index = (pa ^ 0x03000000)) & ~0xFFFFF)) {
+		uint8_t *romp = pRom + index + (gSecondROM ? 1024 * 1024 : 0);
+#ifdef MSB_FIRST
+		return ((uint32_t)romp[0] << 24) | ((uint32_t)romp[1] << 16) | ((uint32_t)romp[2] << 8) | romp[3];
+#else
+		return ((uint32_t)romp[3] << 24) | ((uint32_t)romp[2] << 16) | ((uint32_t)romp[1] << 8) | romp[0];
+#endif
 	}
 
-
-	if (!((index = (addr ^ 0x03100000)) & ~0xFFFFF)) { // NVRAM & DiagPort
-		if (index & 0x80000)            //if (addr>=0x03180000)
+	if (!((index = (pa ^ 0x03100000)) & ~0xFFFFF)) {
+		if (STRICT_BUS_FAULTS && (raw_addr & 3)) { _arm_DataAbort(raw_addr, ARM_FAULT_DEVICE_UNALIGNED_READ); return 0xBADACCE5; }
+		if (index & 0x80000)
 			return _diag_Get();
-		else if (index & 0x40000)       //else if ((addr>=0x03140000) && (addr<0x03180000))
+		else if (index & 0x40000)
 			return (uint32_t)pNVRam[(index >> 2) & 32767];
 	}
 
-	//   io_interface(EXT_DEBUG_PRINT,(void*)str.print("0x%8.8X:  ReadWord???  0x%8.8X=0x%8.8X\n",REG_PC,addr,0xBADACCE5).CStr());
-
-	//MAS_Access_Exept=true;
-	return 0xBADACCE5;///data abort
+	_arm_DataAbort(raw_addr, ARM_FAULT_UNMAPPED_READ);
+	return 0xBADACCE5;
 }
-
 
 void mwriteb(uint32_t addr, uint32_t val)
 {
-	int index; // for avoid bad compiler optimization
+	uint32_t index;
+	const uint32_t raw_addr = addr;
+	uint32_t pa = addr;
+	int cacheable = 0;
+	int bufferable = 0;
 
 	val &= 0xff;
-
-
-	if (addr < 0x00300000) { //dram1&dram2&vram
-		_mem_write8(addr ^ 3, val);
+	if (!cp15_translate(addr, 1, 0, &pa, &cacheable, &bufferable))
 		return;
-	} else if (!((index = (addr ^ 0x03100003)) & ~0xFFFFF)) { //NVRAM
+
+	if (pa < 0x00300000) {
+		arm_note_highram_write(pa);
+		mwrite_ram8(pa, val, cacheable, bufferable);
+		return;
+	} else if (!((index = (pa ^ 0x03100003)) & ~0xFFFFF)) {
+		_arm_FlushWriteBuffer();
 		if ((index & 0x40000) == 0x40000) {
-			//if((addr&3)==3)
-			{
-				pNVRam[(index >> 2) & 32767] = val;
-				/* Does nothing right now */
-				writeNvRam();
-				//io_interface(EXT_WRITE_NVRAM, pNVRam);//_3do_SaveNVRAM(pNVRam);
-			}
+			pNVRam[(index >> 2) & 32767] = (uint8_t)val;
+			writeNvRam();
 			return;
 		}
 	}
-#if 0
-	else if (!((index = (addr ^ 0x03000003)) & ~0xFFFFF)) { //rom
-		return;
-	}
-#endif
-
-	//io_interface(EXT_DEBUG_PRINT,(void*)str.print("0x%8.8X:  WritetByte???  0x%8.8X=0x%8.8X\n",REG_PC,addr,val).CStr());
-
+	_arm_DataAbort(raw_addr, ARM_FAULT_UNMAPPED_WRITE);
 }
-
-
 
 uint32_t mreadb(uint32_t addr)
 {
+	uint32_t index;
+	const uint32_t raw_addr = addr;
+	uint32_t pa = addr;
+	int cacheable = 0;
+	int bufferable = 0;
+	(void)bufferable;
 
-	int index;              // for avoid bad compiler optimization
+	if (!cp15_translate(addr, 0, 0, &pa, &cacheable, &bufferable))
+		return 0xBADACCE5;
 
-	if (addr < 0x00300000)  //dram1&dram2&vram
-		return _mem_read8(addr ^ 3);
-	else if (!((index = (addr ^ 0x03000003)) & ~0xFFFFF)) { //rom
-		if (gSecondROM) // 2nd rom
+	if (pa < 0x00300000) {
+		arm_note_highram_read(pa);
+		return mread_ram8(pa, cacheable);
+	}
+	else if (!((index = (pa ^ 0x03000003)) & ~0xFFFFF)) {
+		if (gSecondROM)
 			return pRom[index + 1024 * 1024];
 		return pRom[index];
-	} else if (!((index = (addr ^ 0x03100003)) & ~0xFFFFF)) { //NVRAM
-		if ((index & 0x40000) == 0x40000) {
-			//if((addr&3)!=3)return 0;
-			//else
+	} else if (!((index = (pa ^ 0x03100003)) & ~0xFFFFF)) {
+		if ((index & 0x40000) == 0x40000)
 			return pNVRam[(index >> 2) & 32767];
-		}
 	}
 
-	//MAS_Access_Exept=true;
-	//    io_interface(EXT_DEBUG_PRINT,(void*)str.print("0x%8.8X:  ReadByte???  0x%8.8X=0x%8.8X\n",REG_PC,addr,0xBADACCE5).CStr());
-
-	return 0xBADACCE5;///data abort
+	_arm_DataAbort(raw_addr, ARM_FAULT_UNMAPPED_READ);
+	return 0xBADACCE5;
 }
 
 
@@ -1789,11 +2484,21 @@ static void intReset(void)
 static int intExec(int cycles)
 {
 	int cnt = 0;
+	unsigned int steps = 0;
+	const unsigned int max_steps = STRICT_BUS_FAULTS ? 1024u : 0u;
 	do {
-		cnt += _arm_Execute();
+		int c = _arm_Execute();
+		cnt += c;
+		steps++;
+		if (STRICT_BUS_FAULTS && BUS_FAULTED)
+			break;
+		if (STRICT_BUS_FAULTS && steps > max_steps) {
+			_arm_DataAbort(REG_PC, ARM_FAULT_CPU_RUNAWAY);
+			break;
+		}
 	} while (cycles > cnt);
 
-	return cnt;
+	return cnt > 0 ? cnt : cycles;
 }
 
 static void intDestroy(void)

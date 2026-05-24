@@ -1,0 +1,69 @@
+# Browser/WebAssembly build for 3DOh using upstream clang/LLD.
+# This target intentionally avoids Emscripten, SDL, Asyncify, and WASI.
+# Build: make -f Makefile.wasm-clang
+# Serve: make -f Makefile.wasm-clang serve
+
+CLANG ?= clang
+PYTHON ?= python3
+BUILD_DIR ?= build/wasm-clang
+WASM ?= $(BUILD_DIR)/3doh.wasm
+CLANG_RESOURCE := $(shell $(CLANG) -print-resource-dir)
+
+COMMON_CFLAGS ?= -O2 -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function
+COMMON_CFLAGS += --target=wasm32-unknown-unknown -ffreestanding -nostdinc -fno-builtin -fno-stack-protector
+COMMON_CFLAGS += -isystem $(CLANG_RESOURCE)/include -Isrc/wasm/freestanding/include -Isrc -Isrc/freedo
+USE_HLE_SWI ?= 0
+COMMON_CFLAGS += -DTHREEDOH_WASM -DDONTPACK -DBPP_TYPE=32
+ifeq ($(USE_HLE_SWI),1)
+COMMON_CFLAGS += -DHLE_SWI
+endif
+
+WASM_LDFLAGS += --target=wasm32-unknown-unknown -nostdlib
+WASM_LDFLAGS += -Wl,--no-entry -Wl,--allow-undefined -Wl,--export-memory
+WASM_LDFLAGS += -Wl,--initial-memory=67108864 -Wl,--max-memory=536870912 -Wl,-z,stack-size=1048576
+WASM_LDFLAGS += -Wl,--export=threedoh_start -Wl,--export=threedoh_frame -Wl,--export=threedoh_soft_reset -Wl,--export=threedoh_shutdown
+WASM_LDFLAGS += -Wl,--export=threedoh_width -Wl,--export=threedoh_height -Wl,--export=threedoh_framebuffer_ptr
+WASM_LDFLAGS += -Wl,--export=threedoh_last_error -Wl,--export=threedoh_last_fault_address -Wl,--export=threedoh_last_fault_pc -Wl,--export=threedoh_last_fault_type -Wl,--export=threedoh_cp15_control -Wl,--export=threedoh_cp15_ops -Wl,--export=threedoh_cp15_cache_flushes -Wl,--export=threedoh_cp15_writebuffer_flushes -Wl,--export=threedoh_madam_soft_clip_count -Wl,--export=threedoh_arm_fiq_entry_count -Wl,--export=threedoh_arm_highram_read_count -Wl,--export=threedoh_arm_highram_write_count -Wl,--export=threedoh_arm_highram_first_read -Wl,--export=threedoh_arm_highram_first_write -Wl,--export=threedoh_arm_highram_last_read -Wl,--export=threedoh_arm_highram_last_write
+WASM_LDFLAGS += -Wl,--export=threedoh_is_started -Wl,--export=threedoh_frame_rate_hz -Wl,--export=threedoh_set_video_standard_mode -Wl,--export=threedoh_input_button_event
+WASM_LDFLAGS += -Wl,--export=threedoh_dsp_resource_fault_count -Wl,--export=threedoh_dsp_resource_mirror_fault_count -Wl,--export=threedoh_dsp_last_resource_fault_address -Wl,--export=threedoh_dsp_last_resource_fault_detail -Wl,--export=threedoh_strict_dsp_resources -Wl,--export=threedoh_set_strict_dsp_resources
+WASM_LDFLAGS += -Wl,--export=threedoh_clio_fiq_generate_count -Wl,--export=threedoh_clio_fiq_need_count -Wl,--export=threedoh_clio_last_fiq_reason1 -Wl,--export=threedoh_clio_last_fiq_reason2
+WASM_LDFLAGS += -Wl,--export=threedoh_clio_irq0_pending -Wl,--export=threedoh_clio_irq0_mask -Wl,--export=threedoh_clio_irq1_pending -Wl,--export=threedoh_clio_irq1_mask
+WASM_LDFLAGS += -Wl,--export=threedoh_clio_eififo_read_count -Wl,--export=threedoh_clio_eififo_empty_read_count -Wl,--export=threedoh_clio_eififo_reload_count -Wl,--export=threedoh_clio_eofifo_write_count -Wl,--export=threedoh_clio_eofifo_disabled_write_count -Wl,--export=threedoh_clio_eofifo_full_count -Wl,--export=threedoh_clio_last_fifo_event -Wl,--export=threedoh_clio_fifo_level_reassert_count -Wl,--export=threedoh_clio_fifo_level_reassert_mask -Wl,--export=threedoh_clio_dspp_control_write_count -Wl,--export=threedoh_clio_dspp_control_last_value -Wl,--export=threedoh_clio_dspp_control_non_gw_count -Wl,--export=threedoh_clio_dspp_reset_write_count -Wl,--export=threedoh_clio_dspp_reset_last_value -Wl,--export=threedoh_clio_fifo_reload_dma_block_count -Wl,--export=threedoh_clio_fifo_last_reload_dma_block_channel -Wl,--export=threedoh_clio_dspp_nmem_read_count -Wl,--export=threedoh_clio_dspp_nmem_last_read_address -Wl,--export=threedoh_clio_xbus_dma_pulse_count -Wl,--export=threedoh_clio_xbus_dma_last_len -Wl,--export=threedoh_clio_xbus_dma_last_addr -Wl,--export=threedoh_clio_xbus_dma_timer_accum -Wl,--export=threedoh_clio_xbus_dma_timer_window -Wl,--export=threedoh_clio_xbus_timer120_adjust_count -Wl,--export=threedoh_clio_xbus_timer120_last_in -Wl,--export=threedoh_clio_xbus_timer120_last_out
+WASM_LDFLAGS += -Wl,--export=threedoh_dsp_run_start_count -Wl,--export=threedoh_dsp_run_stop_count -Wl,--export=threedoh_dsp_reset_count -Wl,--export=threedoh_dsp_int_write_count -Wl,--export=threedoh_dsp_last_int_value
+WASM_LDFLAGS += -Wl,--export=threedoh_dsp_arm_sema_write_count -Wl,--export=threedoh_dsp_arm_sema_read_count -Wl,--export=threedoh_dsp_dsp_sema_write_count -Wl,--export=threedoh_dsp_dsp_sema_ack_count
+WASM_LDFLAGS += -Wl,--export=threedoh_dsp_cpu_supply_write_count -Wl,--export=threedoh_dsp_cpu_supply_read_count -Wl,--export=threedoh_dsp_cpu_supply_random_read_count -Wl,--export=threedoh_dsp_last_cpu_supply_channel -Wl,--export=threedoh_dsp_current_pc -Wl,--export=threedoh_dsp_counter_value -Wl,--export=threedoh_dsp_reload_value -Wl,--export=threedoh_dsp_current_status
+WASM_LDFLAGS += -Wl,--export=threedoh_dsp_audio_tick_count -Wl,--export=threedoh_dsp_counter_reload_count -Wl,--export=threedoh_dsp_program_frame_count -Wl,--export=threedoh_dsp_sleep_count -Wl,--export=threedoh_dsp_deferred_tick_count -Wl,--export=threedoh_dsp_multi_reload_count -Wl,--export=threedoh_dsp_audlock_write_count -Wl,--export=threedoh_dsp_audlock_reset_count -Wl,--export=threedoh_dsp_last_audio_status_value
+WASM_LDFLAGS += -Wl,--export=threedoh_audio_sample_ptr -Wl,--export=threedoh_audio_sample_count -Wl,--export=threedoh_audio_overflowed -Wl,--export=threedoh_audio_sample_rate
+
+SRCS  = src/freedo/Clio.c src/freedo/DSP.c src/freedo/DiagPort.c src/freedo/Iso.c src/freedo/Madam.c
+SRCS += src/freedo/SPORT.c src/freedo/XBUS.c src/freedo/_3do_sys.c src/freedo/arm.c src/freedo/bitop.c
+SRCS += src/freedo/frame.c src/freedo/freedo_fixedpoint_math.c src/freedo/quarz.c src/freedo/vdlp.c
+SRCS += src/core/threedoh_core.c src/platform/wasm/wasm_fs.c src/platform/wasm/wasm_input.c src/platform/wasm/wasm_sound.c src/platform/wasm/threedoh_wasm.c src/wasm/freestanding/wasm_runtime.c
+
+OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SRCS))
+
+all: $(BUILD_DIR)/index.html $(BUILD_DIR)/3doh.js $(WASM)
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
+	mkdir -p $(dir $@)
+	$(CLANG) $(COMMON_CFLAGS) -c $< -o $@
+
+$(WASM): $(OBJS)
+	$(CLANG) $(WASM_LDFLAGS) -o $@ $(OBJS)
+
+$(BUILD_DIR)/index.html: web/wasm_clang/index.html | $(BUILD_DIR)
+	cp $< $@
+
+$(BUILD_DIR)/3doh.js: web/wasm_clang/3doh.js | $(BUILD_DIR)
+	cp $< $@
+
+serve: all
+	$(PYTHON) -m http.server 8000 -d $(BUILD_DIR)
+
+clean:
+	rm -rf $(BUILD_DIR)
+
+.PHONY: all serve clean
