@@ -909,37 +909,25 @@ static void _dsp_ExecuteProgramFrame(void)
 
 uint32_t _dsp_Loop(void)
 {
-	int reloads = 0;
 	int reload = dregs.DSPPRLD ? dregs.DSPPRLD : 1;
 
 	dsp_audio_tick_count++;
 
 	if (flags.Running & 1) {
-		dregs.DSPPCNT -= 567;
+		/* Regression fix: 4438fde made DSP program execution conditional on
+		 * DSPPCNT/DSPPRLD reloads.  The old FreeDO/3DOh audio path executed one
+		 * DSPP program frame per 44.1 kHz audio tick and used DSPPCNT only as
+		 * the down-counter/status side effect.  Gating execution on reloads makes
+		 * titles with larger reload values output stale/silent samples; values
+		 * below 567 also explode into capped multi-reload bursts.
+		 */
+		_dsp_ExecuteProgramFrame();
 
-		while (dregs.DSPPCNT <= 0) {
+		dregs.DSPPCNT -= 567;
+		if (dregs.DSPPCNT <= 0) {
 			dregs.DSPPCNT += reload;
 			dsp_counter_reload_count++;
-			reloads++;
-			if (reloads > 64) {
-				/* Defensive guard for bad reload programming.  Hardware would
-				 * be saturated here; keep the host deterministic and expose it
-				 * through the multi-reload counter. */
-				dsp_multi_reload_count++;
-				dregs.DSPPCNT = reload;
-				break;
-			}
-			_dsp_ExecuteProgramFrame();
-			/* AUDLOCK is status/control, not a reason to reset DSP program
-			 * state every scheduler reload.  MAME resets around output-frame
-			 * advancement, not on the mere 0x3eb write; resetting here causes
-			 * PAL Alone in the Dark to enter millions of synthetic DSP resets. */
-			if (_arm_GetStrictBusFaults() && _arm_BusFaulted())
-				break;
 		}
-
-		if (reloads == 0)
-			dsp_deferred_tick_count++;
 	}
 
 	return ((IMem[0x3ff] << 16) | IMem[0x3fe]);
@@ -1132,8 +1120,8 @@ void  _dsp_SetRunning(bool val)
 {
 	if (val && !flags.Running) {
 		dsp_run_start_count++;
-		/* Starting GW arms execution for the next 44.1 kHz DSPP tick. */
-		dregs.DSPPCNT = 0;
+		if (dregs.DSPPCNT <= 0)
+			dregs.DSPPCNT = dregs.DSPPRLD ? dregs.DSPPRLD : 1;
 	} else if (!val && flags.Running) {
 		dsp_run_stop_count++;
 	}

@@ -590,9 +590,9 @@ unsigned int OFF;
 
 unsigned int pSource;
 
-bool celNeedsFramePixel = false;
-bool celNeedsPPROC = false;
-bool celNeedsPPROJ = false;
+bool celNeedsFramePixel = true;
+bool celNeedsPPROC = true;
+bool celNeedsPPROJ = true;
 
 //AString str;
 
@@ -2210,8 +2210,7 @@ void  DrawLRCel_New(void)
 			const int hdx = HDX1616 >> 16;
 			const int hdy = HDY1616 >> 16;
 			for (x = TEXTURE_WI_START; x < SPRWI; x++, xp+=hdx, yp+=hdy) {
-				CURPIX = readPixelLR(PDATA, x, y, offset);
-				pproj.Transparent = ( ((CURPIX & 0x7fff) == 0x0) & pdec.tmask );
+				CURPIX = PDEC(readPixelLR(PDATA, x, y, offset), &LAMV);
 				if (!pproj.Transparent) {
 					pixel = CURPIX;
 					if (celNeedsFramePixel) framePixel = readFramebufferPixel(PIXSOURCE, xp, yp);
@@ -2239,8 +2238,7 @@ void  DrawLRCel_New(void)
 
 			for (x = 0; x < SPRWI; x++) {
 
-				CURPIX = readPixelLR(PDATA, x, y, offset);
-				pproj.Transparent = ( ((CURPIX & 0x7fff) == 0x0) & pdec.tmask );
+				CURPIX = PDEC(readPixelLR(PDATA, x, y, offset), &LAMV);
 				if (!pproj.Transparent) {
 
 					if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + HDX1616 + VDX1616) >> 16, (ycur + HDY1616 + drawHeight) >> 16))
@@ -2273,8 +2271,7 @@ void  DrawLRCel_New(void)
 
 
 			for (x = 0; x < SPRWI; x++) {
-				CURPIX = readPixelLR(PDATA, x, y, offset);
-				pproj.Transparent = ( ((CURPIX & 0x7fff) == 0x0) & pdec.tmask );
+				CURPIX = PDEC(readPixelLR(PDATA, x, y, offset), &LAMV);
 				if (!pproj.Transparent) {
 					if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
 						break;
