@@ -15,6 +15,13 @@ void Get_Frame_Bitmap(
 	uint_fast32_t copyWidth,
 	uint_fast32_t copyHeight);
 
+void Get_Frame_Bitmap_Pitched(
+	struct VDLFrame* sourceFrame,
+	void* destinationBitmap,
+	uint_fast32_t copyWidth,
+	uint_fast32_t copyHeight,
+	uint_fast32_t destinationPitchPixels);
+
 #ifdef __cplusplus
 }
 #endif

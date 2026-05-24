@@ -101,11 +101,91 @@ static void maybe_dump_ram(void)
     }
 }
 
+static void write_le16(FILE *fp, unsigned int v)
+{
+    fputc((int)(v & 0xff), fp);
+    fputc((int)((v >> 8) & 0xff), fp);
+}
+
+static void write_le32(FILE *fp, unsigned int v)
+{
+    fputc((int)(v & 0xff), fp);
+    fputc((int)((v >> 8) & 0xff), fp);
+    fputc((int)((v >> 16) & 0xff), fp);
+    fputc((int)((v >> 24) & 0xff), fp);
+}
+
+static int save_bmp(const char *path, const unsigned char *pixels,
+                    int width, int height, int pitch, int pixel_bytes)
+{
+    FILE *fp;
+    unsigned int row_bytes;
+    unsigned int file_size;
+    int y;
+
+    if (!path || !*path || !pixels || width <= 0 || height <= 0 || pitch <= 0)
+        return 0;
+    fp = fopen(path, "wb");
+    if (!fp)
+        return 0;
+
+    row_bytes = (unsigned int)((width * 3 + 3) & ~3);
+    file_size = 54U + row_bytes * (unsigned int)height;
+    fputc('B', fp); fputc('M', fp);
+    write_le32(fp, file_size);
+    write_le16(fp, 0); write_le16(fp, 0);
+    write_le32(fp, 54);
+    write_le32(fp, 40);
+    write_le32(fp, (unsigned int)width);
+    write_le32(fp, (unsigned int)height);
+    write_le16(fp, 1);
+    write_le16(fp, 24);
+    write_le32(fp, 0);
+    write_le32(fp, row_bytes * (unsigned int)height);
+    write_le32(fp, 2835); write_le32(fp, 2835);
+    write_le32(fp, 0); write_le32(fp, 0);
+
+    for (y = height - 1; y >= 0; y--) {
+        const unsigned char *row = pixels + y * pitch;
+        int x;
+        for (x = 0; x < width; x++) {
+            unsigned char bgr[3];
+            if (pixel_bytes == 4) {
+                const unsigned char *px = row + x * 4;
+                bgr[0] = px[2]; bgr[1] = px[1]; bgr[2] = px[0];
+            } else {
+                uint16_t v = (uint16_t)row[x * 2] | ((uint16_t)row[x * 2 + 1] << 8);
+                bgr[2] = (unsigned char)(((v >> 11) & 0x1f) * 255 / 31);
+                bgr[1] = (unsigned char)(((v >> 5) & 0x3f) * 255 / 63);
+                bgr[0] = (unsigned char)((v & 0x1f) * 255 / 31);
+            }
+            fwrite(bgr, 1, 3, fp);
+        }
+        for (x = width * 3; x < (int)row_bytes; x++)
+            fputc(0, fp);
+    }
+    return fclose(fp) == 0;
+}
+
+static void maybe_dump_frame(const unsigned char *framebuffer, const threedoh_core *core)
+{
+    const char *path = getenv("THREEDOH_HEADLESS_DUMP_BMP");
+    if (path && *path) {
+        if (!save_bmp(path, framebuffer,
+                      threedoh_core_visible_width(core),
+                      threedoh_core_visible_height(core),
+                      threedoh_core_max_visible_width() * THREEDOH_PIXEL_BYTES,
+                      THREEDOH_PIXEL_BYTES))
+            fprintf(stderr, "could not write bmp: %s\n", path);
+    }
+}
+
 static int parse_video_mode_name(const char *s)
 {
     if (!s || !*s)
         return THREEDOH_VIDEO_AUTO;
-    if (!strcmp(s, "pal") || !strcmp(s, "pal1") || !strcmp(s, "PAL") || !strcmp(s, "PAL1"))
+    if (!strcmp(s, "pal") || !strcmp(s, "pal1") || !strcmp(s, "pal2") ||
+        !strcmp(s, "PAL") || !strcmp(s, "PAL1") || !strcmp(s, "PAL2"))
         return THREEDOH_VIDEO_PAL;
     if (!strcmp(s, "ntsc") || !strcmp(s, "NTSC"))
         return THREEDOH_VIDEO_NTSC;
@@ -153,7 +233,9 @@ int main(int argc, char **argv)
     if (report_every <= 0)
         report_every = frames + 1;
 
-    framebuffer = (unsigned char *)calloc(1, (size_t)THREEDOH_SCREEN_WIDTH * THREEDOH_MAX_SCREEN_HEIGHT * THREEDOH_PIXEL_BYTES);
+    framebuffer = (unsigned char *)calloc(1, (size_t)threedoh_core_max_visible_width() *
+                                          (size_t)threedoh_core_max_visible_height() *
+                                          THREEDOH_PIXEL_BYTES);
     core = (threedoh_core *)calloc(1, threedoh_core_size());
     if (!framebuffer || !core) {
         fprintf(stderr, "allocation failed\n");
@@ -189,6 +271,17 @@ int main(int argc, char **argv)
         goto out;
     }
 
+    {
+        const char *load_state_path = getenv("THREEDOH_HEADLESS_LOAD_STATE");
+        if (load_state_path && *load_state_path) {
+            if (!threedoh_core_load_state_file(core, load_state_path)) {
+                fprintf(stderr, "could not load state: %s\n", load_state_path);
+                rc = 1;
+                goto out;
+            }
+        }
+    }
+
 
     threedoh_input_script_compile(&script, threedoh_core_frame_rate_hz(core));
     printf("headless: disc=%s frames=%ld video=%s %dx%d %dHz script=%d strict_dsp=%d\n",
@@ -199,7 +292,9 @@ int main(int argc, char **argv)
 
     for (frame = 0; frame < frames; frame++) {
         threedoh_input_script_apply(&script, (unsigned long)frame);
-        if (!threedoh_core_frame(core, framebuffer, THREEDOH_SCREEN_WIDTH, THREEDOH_MAX_SCREEN_HEIGHT)) {
+        if (!threedoh_core_frame(core, framebuffer,
+                                 threedoh_core_max_visible_width(),
+                                 threedoh_core_max_visible_height())) {
             print_diag("stop", (unsigned long)frame);
             maybe_dump_ram();
             rc = 1;
@@ -211,6 +306,7 @@ int main(int argc, char **argv)
 
     print_diag("done", (unsigned long)frames);
     maybe_dump_ram();
+    maybe_dump_frame(framebuffer, core);
 
 out:
     threedoh_core_stop(core);

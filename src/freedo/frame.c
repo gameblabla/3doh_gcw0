@@ -73,11 +73,17 @@ static inline bool lineUsesVDLInterpolation(const struct VDLLine *linePtr)
 	return linePtr->xHasCurrentLine && ((linePtr->xOUTCONTROLL & (VDL_HINTEN | VDL_VINTEN)) != 0);
 }
 
-void Get_Frame_Bitmap(struct VDLFrame* sourceFrame, void* destinationBitmap,
-                      uint_fast32_t copyWidth, uint_fast32_t copyHeight)
+void Get_Frame_Bitmap_Pitched(struct VDLFrame* sourceFrame, void* destinationBitmap,
+                              uint_fast32_t copyWidth, uint_fast32_t copyHeight,
+                              uint_fast32_t destinationPitchPixels)
 {
 	uint_fast32_t i, pix;
 	uint8_t *destPtr = (uint8_t*)destinationBitmap;
+	uint_fast32_t rowAdvance;
+
+	if (destinationPitchPixels < copyWidth)
+		destinationPitchPixels = copyWidth;
+	rowAdvance = (destinationPitchPixels - copyWidth) * 4U;
 
 	for (i = 0; i < copyHeight; i++) {
 		const struct VDLLine* linePtr = (const struct VDLLine*)&sourceFrame->lines[i];
@@ -102,7 +108,14 @@ void Get_Frame_Bitmap(struct VDLFrame* sourceFrame, void* destinationBitmap,
 			*destPtr++ = b;
 			*destPtr++ = 255;
 		}
+		destPtr += rowAdvance;
 	}
+}
+
+void Get_Frame_Bitmap(struct VDLFrame* sourceFrame, void* destinationBitmap,
+                      uint_fast32_t copyWidth, uint_fast32_t copyHeight)
+{
+	Get_Frame_Bitmap_Pitched(sourceFrame, destinationBitmap, copyWidth, copyHeight, copyWidth);
 }
 #else
 static inline uint16_t rgb888To565(uint8_t r, uint8_t g, uint8_t b)
@@ -136,16 +149,29 @@ static inline uint16_t decodeVDLPixel16(const struct VDLLine *linePtr, uint16_t 
 	return rgb888To565(r, g, b);
 }
 
-void Get_Frame_Bitmap(struct VDLFrame* sourceFrame, void* destinationBitmap,
-                      uint_fast32_t copyWidth, uint_fast32_t copyHeight)
+void Get_Frame_Bitmap_Pitched(struct VDLFrame* sourceFrame, void* destinationBitmap,
+                              uint_fast32_t copyWidth, uint_fast32_t copyHeight,
+                              uint_fast32_t destinationPitchPixels)
 {
 	uint_fast32_t i, pix;
 	uint16_t *destPtr = (uint16_t*)destinationBitmap;
+	uint_fast32_t rowAdvance;
+
+	if (destinationPitchPixels < copyWidth)
+		destinationPitchPixels = copyWidth;
+	rowAdvance = destinationPitchPixels - copyWidth;
 	for (i = 0; i < copyHeight; i++) {
 		const struct VDLLine* linePtr = (const struct VDLLine*)&sourceFrame->lines[i];
 		const uint16_t *srcPtr = linePtr->line;
 		for (pix = 0; pix < copyWidth; pix++)
 			*destPtr++ = decodeVDLPixel16(linePtr, srcPtr[pix]);
+		destPtr += rowAdvance;
 	}
+}
+
+void Get_Frame_Bitmap(struct VDLFrame* sourceFrame, void* destinationBitmap,
+                      uint_fast32_t copyWidth, uint_fast32_t copyHeight)
+{
+	Get_Frame_Bitmap_Pitched(sourceFrame, destinationBitmap, copyWidth, copyHeight, copyWidth);
 }
 #endif

@@ -8,14 +8,15 @@
 #include "arm.h"
 
 static threedoh_core *g_core;
-static uint8_t g_framebuffer[THREEDOH_SCREEN_WIDTH * THREEDOH_MAX_SCREEN_HEIGHT * THREEDOH_PIXEL_BYTES];
+static uint8_t g_framebuffer[THREEDOH_MAX_SCREEN_WIDTH * THREEDOH_MAX_SCREEN_HEIGHT * THREEDOH_PIXEL_BYTES];
+static uint8_t g_present_framebuffer[THREEDOH_MAX_SCREEN_WIDTH * THREEDOH_MAX_SCREEN_HEIGHT * THREEDOH_PIXEL_BYTES];
 static int g_video_mode = THREEDOH_VIDEO_AUTO;
 static int g_started;
 static int g_last_error;
 
 int threedoh_width(void) { return g_core ? threedoh_core_visible_width(g_core) : THREEDOH_SCREEN_WIDTH; }
 int threedoh_height(void) { return g_core ? threedoh_core_visible_height(g_core) : THREEDOH_SCREEN_HEIGHT; }
-uint8_t *threedoh_framebuffer_ptr(void) { return g_framebuffer; }
+uint8_t *threedoh_framebuffer_ptr(void) { return g_present_framebuffer; }
 int threedoh_last_error(void) { return g_last_error; }
 uint32_t threedoh_last_fault_address(void) { return threedoh_core_last_fault_address(); }
 uint32_t threedoh_last_fault_pc(void) { return threedoh_core_last_fault_pc(); }
@@ -162,10 +163,21 @@ int threedoh_start(void)
 
 int threedoh_frame(void)
 {
+    int y;
+    int w;
+    int h;
     if (!g_started)
         return 0;
-    return threedoh_core_frame(g_core, g_framebuffer,
-                               THREEDOH_SCREEN_WIDTH, THREEDOH_MAX_SCREEN_HEIGHT);
+    if (!threedoh_core_frame(g_core, g_framebuffer,
+                             THREEDOH_MAX_SCREEN_WIDTH, THREEDOH_MAX_SCREEN_HEIGHT))
+        return 0;
+    w = threedoh_core_visible_width(g_core);
+    h = threedoh_core_visible_height(g_core);
+    for (y = 0; y < h; y++)
+        memcpy(g_present_framebuffer + (size_t)y * (size_t)w * THREEDOH_PIXEL_BYTES,
+               g_framebuffer + (size_t)y * THREEDOH_MAX_SCREEN_WIDTH * THREEDOH_PIXEL_BYTES,
+               (size_t)w * THREEDOH_PIXEL_BYTES);
+    return 1;
 }
 
 int threedoh_soft_reset(void)

@@ -29,6 +29,7 @@ struct threedoh_core {
     int iso_started;
     int video_mode;
     int active_video_standard;
+    int visible_width;
     int strict_bus_faults;
     int strict_madam_runaway_faults;
     int strict_dsp_resources;
@@ -107,6 +108,7 @@ void threedoh_core_construct(threedoh_core *core)
         memset(core, 0, sizeof(*core));
         core->video_mode = THREEDOH_VIDEO_AUTO;
         core->active_video_standard = THREEDOH_VIDEO_NTSC;
+        core->visible_width = THREEDOH_SCREEN_WIDTH;
         core->strict_bus_faults = 1;
         core->strict_madam_runaway_faults = 0;
         core->strict_dsp_resources = 1;
@@ -176,40 +178,52 @@ static int file_contains_token(const char *path, const char *token)
 
 static int detect_video_standard(const char *bios_path, const char *iso_path)
 {
-    int pal_hint = 0;
-    int ntsc_hint = 0;
+    int iso_path_pal_hint;
+    int iso_path_ntsc_hint;
+    int iso_file_pal_hint;
+    int iso_file_ntsc_hint;
+    int bios_pal_hint;
+    int bios_ntsc_hint;
 
-    pal_hint = path_contains_token(bios_path, "pal") ||
-               path_contains_token(bios_path, "europe") ||
-               path_contains_token(bios_path, "euro") ||
-               path_contains_token(iso_path, "pal") ||
-               path_contains_token(iso_path, "europe") ||
-               path_contains_token(iso_path, "euro") ||
-               file_contains_token(bios_path, "pal ") ||
-               file_contains_token(bios_path, "pal-") ||
-               file_contains_token(bios_path, "pal_") ||
-               file_contains_token(bios_path, "europe") ||
-               file_contains_token(iso_path, "pal ") ||
-               file_contains_token(iso_path, "pal-") ||
-               file_contains_token(iso_path, "pal_") ||
-               file_contains_token(iso_path, "europe");
+    iso_path_pal_hint = path_contains_token(iso_path, "pal") ||
+                        path_contains_token(iso_path, "europe") ||
+                        path_contains_token(iso_path, "euro");
+    iso_path_ntsc_hint = path_contains_token(iso_path, "ntsc") ||
+                         path_contains_token(iso_path, "usa") ||
+                         path_contains_token(iso_path, "japan") ||
+                         path_contains_token(iso_path, "jpn");
+    if (iso_path_pal_hint && !iso_path_ntsc_hint)
+        return THREEDOH_VIDEO_PAL;
+    if (iso_path_ntsc_hint && !iso_path_pal_hint)
+        return THREEDOH_VIDEO_NTSC;
 
-    ntsc_hint = path_contains_token(bios_path, "ntsc") ||
-                path_contains_token(bios_path, "usa") ||
-                path_contains_token(bios_path, "japan") ||
-                path_contains_token(bios_path, "jpn") ||
-                path_contains_token(iso_path, "ntsc") ||
-                path_contains_token(iso_path, "usa") ||
-                path_contains_token(iso_path, "japan") ||
-                path_contains_token(iso_path, "jpn") ||
-                file_contains_token(bios_path, "ntsc") ||
-                file_contains_token(bios_path, "japan") ||
-                file_contains_token(bios_path, "usa") ||
-                file_contains_token(iso_path, "ntsc") ||
-                file_contains_token(iso_path, "japan") ||
-                file_contains_token(iso_path, "usa");
+    iso_file_pal_hint = file_contains_token(iso_path, "pal ") ||
+                        file_contains_token(iso_path, "pal-") ||
+                        file_contains_token(iso_path, "pal_") ||
+                        file_contains_token(iso_path, "europe");
+    iso_file_ntsc_hint = file_contains_token(iso_path, "ntsc") ||
+                         file_contains_token(iso_path, "japan") ||
+                         file_contains_token(iso_path, "usa");
+    if (iso_file_pal_hint && !iso_file_ntsc_hint)
+        return THREEDOH_VIDEO_PAL;
+    if (iso_file_ntsc_hint && !iso_file_pal_hint)
+        return THREEDOH_VIDEO_NTSC;
 
-    if (pal_hint && !ntsc_hint)
+    bios_pal_hint = path_contains_token(bios_path, "pal") ||
+                    path_contains_token(bios_path, "europe") ||
+                    path_contains_token(bios_path, "euro") ||
+                    file_contains_token(bios_path, "pal ") ||
+                    file_contains_token(bios_path, "pal-") ||
+                    file_contains_token(bios_path, "pal_") ||
+                    file_contains_token(bios_path, "europe");
+    bios_ntsc_hint = path_contains_token(bios_path, "ntsc") ||
+                     path_contains_token(bios_path, "usa") ||
+                     path_contains_token(bios_path, "japan") ||
+                     path_contains_token(bios_path, "jpn") ||
+                     file_contains_token(bios_path, "ntsc") ||
+                     file_contains_token(bios_path, "japan") ||
+                     file_contains_token(bios_path, "usa");
+    if (bios_pal_hint && !bios_ntsc_hint)
         return THREEDOH_VIDEO_PAL;
     return THREEDOH_VIDEO_NTSC;
 }
@@ -234,6 +248,7 @@ static void apply_video_standard(threedoh_core *core, int standard)
     if (standard != THREEDOH_VIDEO_PAL)
         standard = THREEDOH_VIDEO_NTSC;
     core->active_video_standard = standard;
+    core->visible_width = THREEDOH_SCREEN_WIDTH;
     _qrz_SetVideoStandard(standard == THREEDOH_VIDEO_PAL);
     _clio_SetVideoStandard(standard == THREEDOH_VIDEO_PAL);
     _vdl_SetVisibleHeight((uint32_t)visible_height_for_standard(standard));
@@ -275,13 +290,15 @@ int threedoh_core_frame_rate_hz(const threedoh_core *core)
 
 const char *threedoh_core_video_standard_name(const threedoh_core *core)
 {
-    return threedoh_core_active_video_standard(core) == THREEDOH_VIDEO_PAL ? "PAL1 50 Hz / 320x288" : "NTSC 60 Hz / 320x240";
+    if (threedoh_core_active_video_standard(core) != THREEDOH_VIDEO_PAL)
+        return "NTSC 60 Hz / 320x240";
+    return threedoh_core_visible_width(core) > THREEDOH_SCREEN_WIDTH ?
+           "PAL2 50 Hz / 384x288" : "PAL1 50 Hz / 320x288";
 }
 
 int threedoh_core_visible_width(const threedoh_core *core)
 {
-    (void)core;
-    return THREEDOH_SCREEN_WIDTH;
+    return core && core->visible_width > 0 ? core->visible_width : THREEDOH_SCREEN_WIDTH;
 }
 
 int threedoh_core_visible_height(const threedoh_core *core)
@@ -291,7 +308,7 @@ int threedoh_core_visible_height(const threedoh_core *core)
 
 int threedoh_core_max_visible_width(void)
 {
-    return THREEDOH_SCREEN_WIDTH;
+    return THREEDOH_MAX_SCREEN_WIDTH;
 }
 
 int threedoh_core_max_visible_height(void)
@@ -584,6 +601,42 @@ static int frame_recorded_bitmap_height(const struct VDLFrame *frame, int visibl
     return last >= 0 ? last + 1 : 0;
 }
 
+static int frame_line_width_from_vdl_dma(uint32_t clutdma)
+{
+    static const int width_for_modulo[8] = { 320, 384, 512, 640, 1024, 320, 320, 320 };
+    int width = width_for_modulo[(clutdma >> 23) & 7U];
+    if (width > THREEDOH_MAX_SCREEN_WIDTH)
+        width = THREEDOH_MAX_SCREEN_WIDTH;
+    if (width < THREEDOH_SCREEN_WIDTH)
+        width = THREEDOH_SCREEN_WIDTH;
+    return width;
+}
+
+static int frame_recorded_bitmap_width(const struct VDLFrame *frame, int visible_height)
+{
+    int y;
+    int width = THREEDOH_SCREEN_WIDTH;
+    if (!frame || visible_height <= 0)
+        return width;
+    for (y = 0; y < visible_height; y++) {
+        if (frame->lines[y].xHasBitmapLine) {
+            int line_width = frame_line_width_from_vdl_dma(frame->lines[y].xCLUTDMA);
+            if (line_width > width)
+                width = line_width;
+        }
+    }
+    return width;
+}
+
+static int frame_visible_width_for_standard(const struct VDLFrame *frame, int standard, int visible_height)
+{
+    int recorded;
+    if (standard != THREEDOH_VIDEO_PAL)
+        return THREEDOH_SCREEN_WIDTH;
+    recorded = frame_recorded_bitmap_width(frame, visible_height);
+    return recorded > THREEDOH_SCREEN_WIDTH ? recorded : THREEDOH_SCREEN_WIDTH;
+}
+
 static int frame_copy_height_for_standard(const struct VDLFrame *frame, int standard, int visible_height)
 {
     int recorded = frame_recorded_bitmap_height(frame, visible_height);
@@ -633,16 +686,22 @@ int threedoh_core_frame(threedoh_core *core, void *destination_pixels,
         _vdl_DoLineNew(line, &core->frame);
     {
         const int standard = threedoh_core_active_video_standard(core);
+        const int visible_width = frame_visible_width_for_standard(&core->frame, standard, visible_height);
         const int copy_height = frame_copy_height_for_standard(&core->frame, standard, visible_height);
         const int output_y = frame_output_y_for_standard(standard, visible_height, copy_height);
         uint8_t *dest = (uint8_t *)destination_pixels;
-        const uint_fast32_t row_bytes = THREEDOH_SCREEN_WIDTH * THREEDOH_PIXEL_BYTES;
+        const uint_fast32_t row_bytes = width * THREEDOH_PIXEL_BYTES;
 
-        clear_output_frame(destination_pixels, THREEDOH_SCREEN_WIDTH, visible_height);
-        core->frame.srcw = THREEDOH_SCREEN_WIDTH;
+        if (width < (uint_fast32_t)visible_width)
+            return 0;
+
+        core->visible_width = visible_width;
+        clear_output_frame(destination_pixels, (int)width, visible_height);
+        core->frame.srcw = (unsigned int)visible_width;
         core->frame.srch = (unsigned int)copy_height;
         dest += (size_t)output_y * (size_t)row_bytes;
-        Get_Frame_Bitmap(&core->frame, dest, THREEDOH_SCREEN_WIDTH, (uint_fast32_t)copy_height);
+        Get_Frame_Bitmap_Pitched(&core->frame, dest, (uint_fast32_t)visible_width,
+                                 (uint_fast32_t)copy_height, width);
     }
     return 1;
 }

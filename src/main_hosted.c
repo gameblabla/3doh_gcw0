@@ -323,6 +323,7 @@ static int parse_video_mode_arg(const char *arg, int *mode)
         return 0;
     if (strcmp(arg, "--pal") == 0 || strcmp(arg, "-pal") == 0 ||
         strcmp(arg, "--pal1") == 0 || strcmp(arg, "-pal1") == 0 ||
+        strcmp(arg, "--pal2") == 0 || strcmp(arg, "-pal2") == 0 ||
         strcmp(arg, "--force-pal") == 0) {
         *mode = THREEDOH_VIDEO_PAL;
         return 1;
@@ -595,7 +596,7 @@ int main(int argc, char **argv)
     }
 
     if (!iso_path[0]) {
-        fprintf(stderr, "Usage: %s <game.iso|game.cue> [bios.bin] [--auto|--ntsc|--pal|--pal1] [--strict-bus|--compat-bus] [--strict-dsp|--compat-dsp] [--strict-madam|--compat-madam]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <game.iso|game.cue> [bios.bin] [--auto|--ntsc|--pal|--pal1|--pal2] [--strict-bus|--compat-bus] [--strict-dsp|--compat-dsp] [--strict-madam|--compat-madam]\n", argv[0]);
         fprintf(stderr, "       [--input \"1550f:P,1930f:DOWN,1980f:A\"] [--input-script file] [--input-hold-ms ms]\n");
         fprintf(stderr, "       [--record-input file]\n");
         fprintf(stderr, "       [--stop-after seconds | --stop-after-frames frames]\n");

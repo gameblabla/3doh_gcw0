@@ -230,10 +230,14 @@ static INLINE uint32_t VRAMOffEval(uint32_t addr, uint32_t line)
 	return ((((~addr) & 2) << 18) + ((addr >> 2) << 1) + 1024 * 512 * line);
 }
 
-static INLINE void CopyVDLLine(uint16_t *dst, uint32_t bitmapAddr)
+static INLINE void CopyVDLLine(uint16_t *dst, uint32_t bitmapAddr, uint32_t pixelCount)
 {
-	uint32_t i = THREEDOH_MAX_SCREEN_WIDTH;
+	uint32_t i;
 	uint32_t *src = (uint32_t*)(vram + ((bitmapAddr ^ 2) & 0x0FFFFF));
+
+	if (pixelCount > THREEDOH_MAX_SCREEN_WIDTH)
+		pixelCount = THREEDOH_MAX_SCREEN_WIDTH;
+	i = pixelCount;
 	while (i--)
 		*dst++ = *(uint16_t*)(src++);
 }
@@ -260,9 +264,9 @@ void _vdl_DoLineNew(uint32_t line2x, struct VDLFrame *frame)
 		frame->lines[y].xHasBitmapLine = 0;
 		if (vdl_list_active && CLUTDMA.dmaw.enadma) {
 			frame->lines[y].xHasBitmapLine = 1;
-			CopyVDLLine(frame->lines[y].line, PREVIOUSBMP);
+			CopyVDLLine(frame->lines[y].line, PREVIOUSBMP, MODULO);
 #if BPP_TYPE == 32
-			CopyVDLLine(frame->lines[y].currentLine, CURRENTBMP);
+			CopyVDLLine(frame->lines[y].currentLine, CURRENTBMP, MODULO);
 			frame->lines[y].xHasCurrentLine = 1;
 #endif
 			memcpy(frame->lines[y].xCLUTB, CLUTB, 32);
