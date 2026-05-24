@@ -1465,8 +1465,14 @@ static uint16_t PDEC(uint16_t pixel, uint16_t * amv)
 	On 3DO CEL output, bit 0 can be a projector H bit, 
 	and bit 15 can be a projector V/P-mode bit; transparency should be based on the decoded RGB payload, not those projector bits. 
 	The 3DO art docs also describe black as the transparency mask and note that true RGB 0 black is not available in that transparent-mask workflow
+	
+	This needs the handling of both.
+	Otherwise if you do the 0x7ffe fix, it causes letters to lack black outlines in Doom 3DO.
+	If you don't, Idol has black portrait issue ingame.
+	
 	*/
-	pproj.Transparent = (((pres & 0x7ffe) == 0x0000) && pdec.tmask);
+	uint16_t transparentMask = (CCBFLAGS & CCB_NOBLK) ? 0x7fff : 0x7ffe;
+	pproj.Transparent = (((pres & transparentMask) == 0x0000) && pdec.tmask);
 
 	return pres;
 }
