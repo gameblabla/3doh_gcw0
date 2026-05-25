@@ -4,6 +4,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#if defined(_WIN32)
+#include <direct.h>
+#endif
 
 #include "threedoh_core.h"
 #include "freedocore.h"
@@ -35,13 +41,28 @@ struct threedoh_core {
     int strict_dsp_resources;
 };
 
+#define THREEDOH_NVRAM_SIZE (32u * 1024u)
+#define THREEDOH_NVRAM_PATH_MAX 1024
+#define THREEDOH_NVRAM_RECORD_TYPE 1
+#define THREEDOH_NVRAM_LINKED_MEM_VERSION 2
+#define THREEDOH_NVRAM_SYNC_BYTE 'Z'
+#define THREEDOH_NVRAM_SYNC_LEN 5
+#define THREEDOH_NVRAM_COMMENT_LEN 32
+#define THREEDOH_NVRAM_LABEL_LEN 32
+#define THREEDOH_NVRAM_ROOT_AVATARS 8
+#define THREEDOH_NVRAM_VOLUME_UNIQUE_ID 0xffffffffu
+#define THREEDOH_NVRAM_ROOT_UNIQUE_ID 0xfffffffeu
+#define THREEDOH_NVRAM_FINGERPRINT_ANCHOR 0x855a02b6u
+#define THREEDOH_NVRAM_FINGERPRINT_FREE 0x7aa565bdu
+
+#pragma pack(push,1)
 typedef struct {
-    char recordType;
-    char syncBytes[5];
-    char recordVersion;
-    char flags;
-    char comment[32];
-    char label[32];
+    uint8_t recordType;
+    uint8_t syncBytes[THREEDOH_NVRAM_SYNC_LEN];
+    uint8_t recordVersion;
+    uint8_t flags;
+    uint8_t comment[THREEDOH_NVRAM_COMMENT_LEN];
+    uint8_t label[THREEDOH_NVRAM_LABEL_LEN];
     uint32_t id;
     uint32_t blockSize;
     uint32_t blockCount;
@@ -49,10 +70,22 @@ typedef struct {
     uint32_t rootDirBlocks;
     uint32_t rootDirBlockSize;
     uint32_t lastRootDirCopy;
-    uint32_t rootDirCopies[8];
-} NvRamStr;
+    uint32_t rootDirCopies[THREEDOH_NVRAM_ROOT_AVATARS];
+} NvRamDiscLabel;
+
+typedef struct {
+    uint32_t fingerprint;
+    uint32_t flinkoffset;
+    uint32_t blinkoffset;
+    uint32_t blockcount;
+    uint32_t headerblockcount;
+} NvRamLinkedMemBlock;
+#pragma pack(pop)
 
 extern int isexit;
+extern void *Getp_NVRAM(void);
+
+static char g_nvram_path[THREEDOH_NVRAM_PATH_MAX];
 
 static uint32_t ReverseBytes(uint32_t value)
 {
@@ -60,41 +93,225 @@ static uint32_t ReverseBytes(uint32_t value)
            (value & 0x00FF0000U) >> 8 | (value & 0xFF000000U) >> 24;
 }
 
+
+static int nvram_join_path(char *out, size_t out_size, const char *a, const char *b)
+{
+    size_t la;
+    size_t lb;
+    int need_sep;
+    if (!out || out_size == 0 || !a || !b)
+        return 0;
+    la = strlen(a);
+    lb = strlen(b);
+    need_sep = (la > 0 && a[la - 1] != '/' && a[la - 1] != '\\');
+    if (la + (need_sep ? 1u : 0u) + lb + 1u > out_size)
+        return 0;
+    memcpy(out, a, la);
+    if (need_sep)
+        out[la++] = '/';
+    memcpy(out + la, b, lb);
+    out[la + lb] = '\0';
+    return 1;
+}
+
+static int nvram_mkdir_if_needed(const char *path)
+{
+    if (!path || !*path)
+        return 0;
+#if defined(_WIN32)
+    if (_mkdir(path) == 0 || errno == EEXIST)
+        return 1;
+#else
+    if (mkdir(path, 0755) == 0 || errno == EEXIST)
+        return 1;
+#endif
+    return 0;
+}
+
+static const char *nvram_basename(const char *path)
+{
+    const char *base = path;
+    const char *p;
+    if (!path)
+        return "3do";
+    for (p = path; *p; p++) {
+        if (*p == '/' || *p == '\\')
+            base = p + 1;
+    }
+    return *base ? base : "3do";
+}
+
+static void nvram_sanitize_game_name(const char *path, char *out, size_t out_size)
+{
+    const char *base = nvram_basename(path);
+    const char *dot = strrchr(base, '.');
+    size_t stop = dot && dot > base ? (size_t)(dot - base) : strlen(base);
+    size_t o = 0;
+    size_t i;
+    if (!out || out_size == 0)
+        return;
+    for (i = 0; i < stop && o + 1 < out_size; i++) {
+        unsigned char c = (unsigned char)base[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_') {
+            out[o++] = (char)c;
+        } else if (c == ' ' || c == '.' || c == '(' || c == ')' || c == '[' || c == ']') {
+            if (o > 0 && out[o - 1] != '_')
+                out[o++] = '_';
+        } else {
+            if (o > 0 && out[o - 1] != '_')
+                out[o++] = '_';
+        }
+    }
+    while (o > 0 && out[o - 1] == '_')
+        o--;
+    if (o == 0) {
+        const char fallback[] = "3do";
+        for (i = 0; fallback[i] && o + 1 < out_size; i++)
+            out[o++] = fallback[i];
+    }
+    out[o] = '\0';
+}
+
+static int nvram_configure_path(const char *game_path)
+{
+    const char *home = getenv("HOME");
+    char root[THREEDOH_NVRAM_PATH_MAX];
+    char dir[THREEDOH_NVRAM_PATH_MAX];
+    char name[256];
+
+#if defined(_WIN32)
+    if (!home || !*home)
+        home = getenv("USERPROFILE");
+#endif
+    if (!home || !*home) {
+        g_nvram_path[0] = '\0';
+        return 0;
+    }
+
+    if (!nvram_join_path(root, sizeof(root), home, ".3doh") ||
+        !nvram_join_path(dir, sizeof(dir), root, "nvram")) {
+        g_nvram_path[0] = '\0';
+        return 0;
+    }
+    if (!nvram_mkdir_if_needed(root) || !nvram_mkdir_if_needed(dir)) {
+        g_nvram_path[0] = '\0';
+        return 0;
+    }
+
+    nvram_sanitize_game_name(game_path, name, sizeof(name));
+    if (strlen(name) + 4u >= sizeof(name)) {
+        g_nvram_path[0] = '\0';
+        return 0;
+    }
+    strcat(name, ".nvr");
+    if (!nvram_join_path(g_nvram_path, sizeof(g_nvram_path), dir, name)) {
+        g_nvram_path[0] = '\0';
+        return 0;
+    }
+    return 1;
+}
+
+static int nvram_is_initialized(const void *pnvram)
+{
+    const NvRamDiscLabel *label = (const NvRamDiscLabel *)pnvram;
+    int i;
+    if (!pnvram)
+        return 0;
+    if (label->recordType != THREEDOH_NVRAM_RECORD_TYPE)
+        return 0;
+    if (label->recordVersion != THREEDOH_NVRAM_LINKED_MEM_VERSION)
+        return 0;
+    for (i = 0; i < THREEDOH_NVRAM_SYNC_LEN; i++) {
+        if (label->syncBytes[i] != (uint8_t)THREEDOH_NVRAM_SYNC_BYTE)
+            return 0;
+    }
+    return 1;
+}
+
+static void nvram_format(void *pnvram)
+{
+    NvRamDiscLabel *label;
+    NvRamLinkedMemBlock *anchor;
+    NvRamLinkedMemBlock *free_block;
+    if (!pnvram)
+        return;
+
+    memset(pnvram, 0, THREEDOH_NVRAM_SIZE);
+    label = (NvRamDiscLabel *)pnvram;
+    anchor = (NvRamLinkedMemBlock *)((uint8_t *)pnvram + sizeof(NvRamDiscLabel));
+    free_block = (NvRamLinkedMemBlock *)((uint8_t *)anchor + sizeof(NvRamLinkedMemBlock));
+
+    label->recordType = THREEDOH_NVRAM_RECORD_TYPE;
+    memset(label->syncBytes, THREEDOH_NVRAM_SYNC_BYTE, sizeof(label->syncBytes));
+    label->recordVersion = THREEDOH_NVRAM_LINKED_MEM_VERSION;
+    memcpy(label->comment, "3doh formatted", sizeof("3doh formatted") - 1);
+    memcpy(label->label, "nvram", sizeof("nvram") - 1);
+    label->id = ReverseBytes(THREEDOH_NVRAM_VOLUME_UNIQUE_ID);
+    label->blockSize = ReverseBytes(1);
+    label->blockCount = ReverseBytes(THREEDOH_NVRAM_SIZE);
+    label->rootDirId = ReverseBytes(THREEDOH_NVRAM_ROOT_UNIQUE_ID);
+    label->rootDirBlocks = ReverseBytes(0);
+    label->rootDirBlockSize = ReverseBytes(1);
+    label->lastRootDirCopy = ReverseBytes(0);
+    label->rootDirCopies[0] = ReverseBytes(sizeof(NvRamDiscLabel));
+
+    anchor->fingerprint = ReverseBytes(THREEDOH_NVRAM_FINGERPRINT_ANCHOR);
+    anchor->flinkoffset = ReverseBytes(sizeof(NvRamDiscLabel) + sizeof(NvRamLinkedMemBlock));
+    anchor->blinkoffset = ReverseBytes(sizeof(NvRamDiscLabel) + sizeof(NvRamLinkedMemBlock));
+    anchor->blockcount = ReverseBytes(sizeof(NvRamLinkedMemBlock));
+    anchor->headerblockcount = ReverseBytes(sizeof(NvRamLinkedMemBlock));
+
+    free_block->fingerprint = ReverseBytes(THREEDOH_NVRAM_FINGERPRINT_FREE);
+    free_block->flinkoffset = ReverseBytes(sizeof(NvRamDiscLabel));
+    free_block->blinkoffset = ReverseBytes(sizeof(NvRamDiscLabel));
+    free_block->blockcount = ReverseBytes(THREEDOH_NVRAM_SIZE - sizeof(NvRamDiscLabel) - sizeof(NvRamLinkedMemBlock));
+    free_block->headerblockcount = ReverseBytes(sizeof(NvRamLinkedMemBlock));
+}
+
+static int nvram_load_file(void *pnvram)
+{
+    FILE *fp;
+    size_t n;
+    if (!pnvram || !g_nvram_path[0])
+        return 0;
+    fp = fopen(g_nvram_path, "rb");
+    if (!fp)
+        return 0;
+    n = fread(pnvram, 1, THREEDOH_NVRAM_SIZE, fp);
+    fclose(fp);
+    return n == THREEDOH_NVRAM_SIZE;
+}
+
+static int nvram_save_file(const void *pnvram)
+{
+    FILE *fp;
+    size_t n;
+    if (!pnvram || !g_nvram_path[0])
+        return 0;
+    fp = fopen(g_nvram_path, "wb");
+    if (!fp)
+        return 0;
+    n = fwrite(pnvram, 1, THREEDOH_NVRAM_SIZE, fp);
+    fclose(fp);
+    return n == THREEDOH_NVRAM_SIZE;
+}
+
 void readNvRam(void *pnvram)
 {
-    uint_fast8_t x;
-    NvRamStr *nvramStruct = (NvRamStr *)pnvram;
-
-    nvramStruct->recordType = 0x01;
-    for (x = 0; x < 5; x++)
-        nvramStruct->syncBytes[x] = (char)'Z';
-    nvramStruct->recordVersion = 0x02;
-    nvramStruct->flags = 0x00;
-    for (x = 0; x < 32; x++)
-        nvramStruct->comment[x] = 0;
-
-    nvramStruct->label[0] = (char)'n';
-    nvramStruct->label[1] = (char)'v';
-    nvramStruct->label[2] = (char)'r';
-    nvramStruct->label[3] = (char)'a';
-    nvramStruct->label[4] = (char)'m';
-    for (x = 5; x < 32; x++)
-        nvramStruct->label[x] = 0;
-
-    nvramStruct->id = ReverseBytes(0xFFFFFFFF);
-    nvramStruct->blockSize = ReverseBytes(0x00000001);
-    nvramStruct->blockCount = ReverseBytes(0x00008000);
-    nvramStruct->rootDirId = ReverseBytes(0xFFFFFFFE);
-    nvramStruct->rootDirBlocks = ReverseBytes(0x00000000);
-    nvramStruct->rootDirBlockSize = ReverseBytes(0x00000001);
-    nvramStruct->lastRootDirCopy = ReverseBytes(0x00000000);
-    nvramStruct->rootDirCopies[0] = ReverseBytes(0x00000084);
-    for (x = 1; x < 8; x++)
-        nvramStruct->rootDirCopies[x] = 0;
+    if (!pnvram)
+        return;
+    if (!nvram_load_file(pnvram) || !nvram_is_initialized(pnvram)) {
+        nvram_format(pnvram);
+        nvram_save_file(pnvram);
+    }
 }
 
 void writeNvRam(void)
 {
+    void *pnvram = Getp_NVRAM();
+    if (pnvram)
+        nvram_save_file(pnvram);
 }
 
 size_t threedoh_core_size(void)
@@ -559,6 +776,8 @@ int threedoh_core_start(threedoh_core *core, const char *bios_path, const char *
     if (!fsOpenIso((char *)iso_path))
         return 0;
     core->iso_started = 1;
+
+    nvram_configure_path(iso_path);
 
     isexit = 0;
     if (!_3do_Init())
