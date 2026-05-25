@@ -516,6 +516,7 @@ void Init_Scale_Map(void);
 void Init_Arbitrary_Map(void);
 void TexelDraw_BitmapRow(uint16_t LAMV, int xcur, int ycur, int cnt);
 void TexelDraw_Line(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int cnt);
+void TexelDraw_MariaPoint(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur);
 int  TexelDraw_Scale(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int deltax, int deltay);
 int  TexelDraw_Arbitrary(uint16_t CURPIX, uint16_t LAMV, int xA, int yA, int xB, int yB, int xC, int yC, int xD, int yD);
 void  DrawPackedCel_New(void);
@@ -1888,7 +1889,9 @@ void  DrawPackedCel_New(void)
 						CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
 
 						if (!pproj.Transparent) {
-							if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + (HDX1616 + VDX1616)) >> 16, (ycur + (HDY1616 + drawHeight)) >> 16))
+							if (CCBFLAGS & CCB_MARIA)
+								TexelDraw_MariaPoint(CURPIX, LAMV, xcur, ycur);
+							else if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + (HDX1616 + VDX1616)) >> 16, (ycur + (HDY1616 + drawHeight)) >> 16))
 								break;
 						}
 						xcur += HDX1616;
@@ -1907,12 +1910,20 @@ void  DrawPackedCel_New(void)
 				case 3: //PACK_REPEAT
 					CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
 					if (!pproj.Transparent) {
-
-						if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + (HDX1616 * (pixcount)) + VDX1616) >> 16, (ycur + (HDY1616 * (pixcount)) + drawHeight) >> 16)) break;
+						if (CCBFLAGS & CCB_MARIA) {
+							while (pixcount) {
+								pixcount--;
+								TexelDraw_MariaPoint(CURPIX, LAMV, xcur, ycur);
+								xcur += HDX1616;
+								ycur += HDY1616;
+							}
+						} else if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + (HDX1616 * (pixcount)) + VDX1616) >> 16, (ycur + (HDY1616 * (pixcount)) + drawHeight) >> 16)) break;
 
 					}
-					xcur += HDX1616 * (pixcount);
-					ycur += HDY1616 * (pixcount);
+					if (pixcount) {
+						xcur += HDX1616 * (pixcount);
+						ycur += HDY1616 * (pixcount);
+					}
 					pixcount = 0;
 					break;
 				}       //type
@@ -1972,7 +1983,9 @@ void  DrawPackedCel_New(void)
 						pixcount--;
 						//   if(speedfixes>=0&&speedfixes<=100001) speedfixes=300000;
 						if (!pproj.Transparent) {
-							if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
+							if (CCBFLAGS & CCB_MARIA)
+								TexelDraw_MariaPoint(CURPIX, LAMV, xcur, ycur);
+							else if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
 								break;
 						}
 						xcur += hdx;
@@ -1999,7 +2012,9 @@ void  DrawPackedCel_New(void)
 						while (pixcount) {
 						if (madam_guard_work(1)) { pixcount = 0; break; }
 							pixcount--;
-							if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
+							if (CCBFLAGS & CCB_MARIA)
+								TexelDraw_MariaPoint(CURPIX, LAMV, xcur, ycur);
+							else if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
 								break;
 							xcur += hdx;
 							ycur += hdy;
@@ -2121,7 +2136,9 @@ void  DrawLiteralCel_New(void)
 
 
 				if (!pproj.Transparent) {
-					if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + HDX1616 + VDX1616) >> 16, (ycur + HDY1616 + drawHeight) >> 16)) break;
+					if (CCBFLAGS & CCB_MARIA)
+						TexelDraw_MariaPoint(CURPIX, LAMV, xcur, ycur);
+					else if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + HDX1616 + VDX1616) >> 16, (ycur + HDY1616 + drawHeight) >> 16)) break;
 
 				}
 				xcur += HDX1616;
@@ -2165,7 +2182,9 @@ void  DrawLiteralCel_New(void)
 				CURPIX = PDEC(BitReaderBig_Read(&bitoper, bpp), &LAMV);
 
 				if (!pproj.Transparent) {
-					if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
+					if (CCBFLAGS & CCB_MARIA)
+						TexelDraw_MariaPoint(CURPIX, LAMV, xcur, ycur);
+					else if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
 						break;
 					if (speedfixes < 1 || (speedfixes >= 0 && speedfixes < 200001)) {
 						if (CURPIX > 30000 && CURPIX < 40000) speedfixes = 0;
@@ -2264,7 +2283,9 @@ void  DrawLRCel_New(void)
 				CURPIX = PDEC(readPixelLR(PDATA, x, y, offset), &LAMV);
 				if (!pproj.Transparent) {
 
-					if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + HDX1616 + VDX1616) >> 16, (ycur + HDY1616 + drawHeight) >> 16))
+					if (CCBFLAGS & CCB_MARIA)
+						TexelDraw_MariaPoint(CURPIX, LAMV, xcur, ycur);
+					else if (TexelDraw_Scale(CURPIX, LAMV, xcur >> 16, ycur >> 16, (xcur + HDX1616 + VDX1616) >> 16, (ycur + HDY1616 + drawHeight) >> 16))
 						break;
 
 				}
@@ -2296,7 +2317,9 @@ void  DrawLRCel_New(void)
 			for (x = 0; x < SPRWI; x++) {
 				CURPIX = PDEC(readPixelLR(PDATA, x, y, offset), &LAMV);
 				if (!pproj.Transparent) {
-					if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
+					if (CCBFLAGS & CCB_MARIA)
+						TexelDraw_MariaPoint(CURPIX, LAMV, xcur, ycur);
+					else if (TexelDraw_Arbitrary(CURPIX, LAMV, xcur, ycur, xcur + hdx, ycur + hdy, xdown + HDX1616, ydown + HDY1616, xdown, ydown))
 						break;
 				}
 
@@ -2653,6 +2676,27 @@ void TexelDraw_Line(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int cnt)
 		}
 		writeFramebufferPixel(FBTARGET, xp, yp, pixel);
 	}
+}
+
+
+void TexelDraw_MariaPoint(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur)
+{
+	unsigned int pixel = CURPIX;
+	unsigned int framePixel = 0;
+	int xp = xcur >> 16;
+	int yp = ycur >> 16;
+
+	if (madam_guard_work(1))
+		return;
+	if (!TESTCLIP(xp, yp))
+		return;
+	if (celNeedsFramePixel)
+		framePixel = readFramebufferPixel(PIXSOURCE, xp, yp);
+	if (celNeedsPPROC)
+		pixel = PPROC(CURPIX, framePixel, LAMV);
+	if (celNeedsPPROJ)
+		pixel = PPROJ_OUTPUT(CURPIX, pixel, framePixel);
+	writeFramebufferPixel(FBTARGET, xp, yp, pixel);
 }
 
 int  TexelDraw_Scale(uint16_t CURPIX, uint16_t LAMV, int xcur, int ycur, int deltax, int deltay)

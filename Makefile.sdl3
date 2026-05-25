@@ -6,7 +6,7 @@ BPP_TYPE = 32
 SDL3_CFLAGS ?= $(shell pkg-config --cflags sdl3 2>/dev/null || pkg-config --cflags SDL3 2>/dev/null)
 SDL3_LIBS ?= $(shell pkg-config --libs sdl3 2>/dev/null || pkg-config --libs SDL3 2>/dev/null || echo -lSDL3)
 
-CFLAGS ?= -O2 -std=gnu99 -Wall -Wextra
+CFLAGS ?= -Ofast -std=gnu99 -Wall -Wextra
 USE_HLE_SWI ?= 0
 CFLAGS += -DDONTPACK -DTHREEDOH_PLATFORM_SDL3 -DBPP_TYPE=$(BPP_TYPE)
 ifeq ($(USE_HLE_SWI),1)
