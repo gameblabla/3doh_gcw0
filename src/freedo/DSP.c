@@ -58,6 +58,8 @@
 #define ARM_FAULT_DSP_RUNAWAY 8u
 #define ARM_FAULT_DSP_RESOURCE 14u
 
+
+
 uint16_t RegBase(unsigned int reg);
 static INLINE uint16_t ireadh(unsigned int addr);
 static INLINE void iwriteh(unsigned int addr, uint16_t val);
@@ -224,6 +226,7 @@ struct DSPDatum {
 #endif
 
 static struct DSPDatum dsp;
+
 static bool dsp_strict_resource_faults = true;
 static uint32_t dsp_resource_fault_count;
 static uint32_t dsp_resource_mirror_fault_count;
@@ -634,15 +637,10 @@ static void _dsp_ExecuteProgramFrame(void)
 						BOP = flags.ALU2 << 16;
 						break;
 					case 3:
-						switch (inst.aif.MUXB) {
-						case 0:
+						if (inst.aif.M2SEL == 0)
 							BOP = ( ((int)flags.MULT1 * (((signed int)Y >> 15)) & ~1) & ALUSIZEMASK );
-							break;
-						default:
+						else
 							BOP = ( ((int)flags.MULT1 * (int)flags.MULT2 * 2) & ALUSIZEMASK );
-							break;
-						}
-						;
 						break;
 					}
 					break;
@@ -1248,39 +1246,36 @@ void  OperandLoader(int Requests)
 			flags.WRITEBACK = OperandPool[Operands++];
 			break;
 
+		case 0:
 		case 1:
 		case 2:
 		case 3:
 			switch (operand.r3of.R3_DI) {
 			case 0:
-				OperandPool[Operands] = ireadh(REGCONV[REGi][operand.r3of.R3] ^ RBASEx4 );
+				OperandPool[Operands++] = ireadh(REGCONV[REGi][operand.r3of.R3] ^ RBASEx4 );
 				break;
 			default:
-				OperandPool[Operands] = ireadh(ireadh(REGCONV[REGi][operand.r3of.R3] ^ RBASEx4));
+				OperandPool[Operands++] = ireadh(ireadh(REGCONV[REGi][operand.r3of.R3] ^ RBASEx4));
 				break;
 			}
-			;
 
 			switch (operand.r3of.R2_DI) {
 			case 0:
-				OperandPool[Operands] = ireadh(REGCONV[REGi][operand.r3of.R2] ^ RBASEx4 );
+				OperandPool[Operands++] = ireadh(REGCONV[REGi][operand.r3of.R2] ^ RBASEx4 );
 				break;
 			default:
-				OperandPool[Operands] = ireadh(ireadh(REGCONV[REGi][operand.r3of.R2] ^ RBASEx4));
+				OperandPool[Operands++] = ireadh(ireadh(REGCONV[REGi][operand.r3of.R2] ^ RBASEx4));
 				break;
 			}
-			;
 
 			switch (operand.r3of.R1_DI) {
 			case 0:
-				OperandPool[Operands] = ireadh(flags.WRITEBACK =       REGCONV[REGi][operand.r3of.R1] ^ RBASEx4 );
+				OperandPool[Operands++] = ireadh(flags.WRITEBACK =       REGCONV[REGi][operand.r3of.R1] ^ RBASEx4 );
 				break;
 			default:
-				OperandPool[Operands] = ireadh(flags.WRITEBACK = ireadh(REGCONV[REGi][operand.r3of.R1] ^ RBASEx4));
+				OperandPool[Operands++] = ireadh(flags.WRITEBACK = ireadh(REGCONV[REGi][operand.r3of.R1] ^ RBASEx4));
 				break;
 			}
-			;
-			Operands += 3;
 			break;
 		default:
 			//regged 1/2 format

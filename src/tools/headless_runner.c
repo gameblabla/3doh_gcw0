@@ -11,6 +11,83 @@
 #include "freedo/arm.h"
 extern void* Getp_RAMS(void);
 
+extern int threedoh_audio_sample_count(void);
+extern uint32_t *threedoh_audio_sample_ptr(void);
+extern int threedoh_audio_sample_rate(void);
+
+
+static FILE *audio_dump_fp = NULL;
+static uint32_t audio_dump_data_bytes = 0;
+static uint32_t audio_dump_sample_rate = 44100;
+
+static void write_wav_le16(FILE *fp, unsigned int v)
+{
+    fputc((int)(v & 0xff), fp);
+    fputc((int)((v >> 8) & 0xff), fp);
+}
+
+static void write_wav_le32(FILE *fp, unsigned int v)
+{
+    fputc((int)(v & 0xff), fp);
+    fputc((int)((v >> 8) & 0xff), fp);
+    fputc((int)((v >> 16) & 0xff), fp);
+    fputc((int)((v >> 24) & 0xff), fp);
+}
+
+static void maybe_begin_audio_dump(void)
+{
+    const char *path = getenv("THREEDOH_HEADLESS_DUMP_WAV");
+    if (!path || !*path)
+        return;
+    audio_dump_fp = fopen(path, "wb+");
+    if (!audio_dump_fp) {
+        fprintf(stderr, "could not write wav: %s\n", path);
+        return;
+    }
+    audio_dump_sample_rate = (uint32_t)threedoh_audio_sample_rate();
+    fwrite("RIFF", 1, 4, audio_dump_fp);
+    write_wav_le32(audio_dump_fp, 0);
+    fwrite("WAVEfmt ", 1, 8, audio_dump_fp);
+    write_wav_le32(audio_dump_fp, 16);
+    write_wav_le16(audio_dump_fp, 1);
+    write_wav_le16(audio_dump_fp, 2);
+    write_wav_le32(audio_dump_fp, audio_dump_sample_rate);
+    write_wav_le32(audio_dump_fp, audio_dump_sample_rate * 4);
+    write_wav_le16(audio_dump_fp, 4);
+    write_wav_le16(audio_dump_fp, 16);
+    fwrite("data", 1, 4, audio_dump_fp);
+    write_wav_le32(audio_dump_fp, 0);
+}
+
+static void maybe_append_audio_frame(void)
+{
+    int count;
+    uint32_t *samples;
+    int i;
+    if (!audio_dump_fp)
+        return;
+    count = threedoh_audio_sample_count();
+    samples = threedoh_audio_sample_ptr();
+    for (i = 0; i < count; i++) {
+        uint32_t v = samples[i];
+        write_wav_le16(audio_dump_fp, v & 0xffffu);
+        write_wav_le16(audio_dump_fp, (v >> 16) & 0xffffu);
+        audio_dump_data_bytes += 4;
+    }
+}
+
+static void maybe_end_audio_dump(void)
+{
+    if (!audio_dump_fp)
+        return;
+    fseek(audio_dump_fp, 4, SEEK_SET);
+    write_wav_le32(audio_dump_fp, 36u + audio_dump_data_bytes);
+    fseek(audio_dump_fp, 40, SEEK_SET);
+    write_wav_le32(audio_dump_fp, audio_dump_data_bytes);
+    fclose(audio_dump_fp);
+    audio_dump_fp = NULL;
+}
+
 static void print_diag(const char *prefix, unsigned long frame)
 {
     printf("%s frame=%lu fault=%u pc=%08x addr=%08x arm_pc=%08x cpsr=%08x r0=%08x r1=%08x r2=%08x r3=%08x r4=%08x r9=%08x r10=%08x r11=%08x r12=%08x r14=%08x arm_fiq=%u unalign_pf=%u/%08x/%08x mirror_pf=%u/%08x/%08x highram_r=%u/%08x/%08x highram_w=%u/%08x/%08x "
@@ -283,6 +360,7 @@ int main(int argc, char **argv)
     }
 
 
+    maybe_begin_audio_dump();
     threedoh_input_script_compile(&script, threedoh_core_frame_rate_hz(core));
     printf("headless: disc=%s frames=%ld video=%s %dx%d %dHz script=%d strict_dsp=%d\n",
            disc, frames, threedoh_core_video_standard_name(core),
@@ -300,6 +378,7 @@ int main(int argc, char **argv)
             rc = 1;
             goto out;
         }
+        maybe_append_audio_frame();
         if ((frame % report_every) == 0)
             print_diag("frame", (unsigned long)frame);
     }
@@ -311,6 +390,7 @@ int main(int argc, char **argv)
 out:
     threedoh_core_stop(core);
     inputClose();
+    maybe_end_audio_dump();
     soundClose();
     free(framebuffer);
     free(core);
