@@ -21,6 +21,104 @@ FILE *fcdrom;
 static int cd_sector_size;
 static int cd_sector_offset;
 
+
+static void safe_copy_path(char *dst, const char *src, size_t dst_size)
+{
+   if (!dst || !dst_size)
+      return;
+   if (!src)
+      src = "";
+   strncpy(dst, src, dst_size - 1);
+   dst[dst_size - 1] = '\0';
+}
+
+static const char *path_basename_const(const char *path)
+{
+   const char *base;
+   const char *slash;
+   const char *backslash;
+
+   if (!path)
+      return "";
+
+   base = path;
+   slash = strrchr(path, '/');
+   backslash = strrchr(path, '\\');
+   if (slash && slash + 1 > base)
+      base = slash + 1;
+   if (backslash && backslash + 1 > base)
+      base = backslash + 1;
+   return base;
+}
+
+static char *fsFindCueSiblingImage(const char *cue_path, const char *referenced_path)
+{
+   enum { PATH_MAX_LOCAL = 2048 };
+   static const char *fallback_exts[] = { ".iso", ".ISO", ".bin", ".BIN", ".img", ".IMG" };
+   char dir[PATH_MAX_LOCAL];
+   char cue_base[PATH_MAX_LOCAL];
+   char ref_ext[64];
+   const char *cue_name;
+   const char *dot;
+   char *slash;
+   char *backslash;
+   size_t dir_len;
+   size_t base_len;
+   int i;
+
+   if (!cue_path)
+      return NULL;
+
+   safe_copy_path(dir, cue_path, sizeof(dir));
+   slash = strrchr(dir, '/');
+   backslash = strrchr(dir, '\\');
+   if (backslash && (!slash || backslash > slash))
+      slash = backslash;
+   if (slash)
+      slash[1] = '\0';
+   else
+      dir[0] = '\0';
+
+   cue_name = path_basename_const(cue_path);
+   safe_copy_path(cue_base, cue_name, sizeof(cue_base));
+   dot = strrchr(cue_base, '.');
+   if (dot)
+      cue_base[dot - cue_base] = '\0';
+
+   ref_ext[0] = '\0';
+   if (referenced_path) {
+      const char *ref_name = path_basename_const(referenced_path);
+      dot = strrchr(ref_name, '.');
+      if (dot && strlen(dot) < sizeof(ref_ext))
+         safe_copy_path(ref_ext, dot, sizeof(ref_ext));
+   }
+
+   dir_len = strlen(dir);
+   base_len = strlen(cue_base);
+
+   for (i = -1; i < (int)(sizeof(fallback_exts) / sizeof(fallback_exts[0])); ++i) {
+      const char *ext = (i < 0) ? ref_ext : fallback_exts[i];
+      char candidate[PATH_MAX_LOCAL];
+      FILE *fp;
+      if (!ext[0])
+         continue;
+      if (dir_len + base_len + strlen(ext) + 1 > sizeof(candidate))
+         continue;
+      snprintf(candidate, sizeof(candidate), "%s%s%s", dir, cue_base, ext);
+      fp = fopen(candidate, "rb");
+      if (fp) {
+         char *out;
+         fclose(fp);
+         out = (char *)malloc(strlen(candidate) + 1);
+         if (out)
+            strcpy(out, candidate);
+         return out;
+      }
+   }
+
+   return NULL;
+}
+
 static void fsDetectCDFormat(const char *path, cueFile *cue_file)
 {
    CD_format cd_format;
@@ -95,6 +193,7 @@ int fsOpenIso(char *path)
    cueFile *cue_file = cue_get(path);
    int path_is_cue = cue_is_cue_path(path);
    const char *cd_image_path;
+   char *fallback_cd_image_path = NULL;
 
    if (path_is_cue && (!cue_file || !cue_file->cd_image))
    {
@@ -107,6 +206,14 @@ int fsOpenIso(char *path)
    cd_image_path = path_is_cue ? cue_file->cd_image : path;
    fcdrom = fopen(cd_image_path, "rb");
 
+   if (!fcdrom && path_is_cue)
+   {
+      fallback_cd_image_path = fsFindCueSiblingImage(path, cd_image_path);
+      if (fallback_cd_image_path)
+         fcdrom = fopen(fallback_cd_image_path, "rb");
+   }
+
+   free(fallback_cd_image_path);
    cue_free(cue_file);
 
    if(!fcdrom)
